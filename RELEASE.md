@@ -9,8 +9,8 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-That's the only manual step. Everything else is automated.
-
+Tagging is the only step required to build and publish binaries.
+Updating AUR and Homebrew formulas is still manual.
 ---
 
 ## 2. What the GitHub Action does
@@ -41,7 +41,7 @@ curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-aarch6
 
 Paste the results into `PKGBUILD`:
 
-```
+```sh
 sha256sums_x86_64=('<hash>')
 sha256sums_aarch64=('<hash>')
 ```
