@@ -1,1 +1,26 @@
+# Rust build output
 /target
+
+# Cargo.lock is intentionally committed for binary projects (reproducible builds)
+
+# Packaging artifacts
+*.tar.gz
+fafind-bin/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
