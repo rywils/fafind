@@ -3,7 +3,9 @@ use ignore::WalkBuilder;
 use smallvec::SmallVec;
 use std::ffi::OsStr;
 use std::io::{BufWriter, Write};
+use std::cell::UnsafeCell;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -385,9 +387,56 @@ fn stem_bytes(bytes: &[u8]) -> &[u8] {
 // Written once per thread on drop, read once in main — never in hot path.
 type Totals = Arc<Mutex<(u64, u64)>>; // (scanned, found)
 
-// Collects each worker's completed output buffer.
-// Workers move their Vec<u8> in on drop; main drains and writes to stdout.
-type OutputCollector = Arc<Mutex<Vec<Vec<u8>>>>;  // one lock per thread lifetime
+// Lock-free output slot array.
+//
+// Layout: (next_slot_idx, [UnsafeCell<Option<Vec<u8>>>; num_workers])
+//
+// Safety contract:
+//   - Each worker claims a unique slot index via fetch_add ONCE at construction,
+//     before processing any entry. No two workers share a slot index.
+//   - A worker writes to its slot ONLY in Drop, after all entry processing is done.
+//   - Main reads slots ONLY after walk_parallel() returns, which blocks until
+//     every worker thread has exited (and therefore dropped WorkerState).
+//   - Therefore: no concurrent access to any slot ever occurs.
+struct OutputSlots {
+    next_idx: AtomicUsize,
+    slots: Vec<UnsafeCell<Option<Vec<u8>>>>,
+}
+
+// SAFETY: Workers only write to their own unique slot; main reads only after
+// all workers are done. Unique ownership per slot guarantees no data races.
+unsafe impl Sync for OutputSlots {}
+unsafe impl Send for OutputSlots {}
+
+impl OutputSlots {
+    fn new(capacity: usize) -> Arc<Self> {
+        let mut slots = Vec::with_capacity(capacity);
+        for _ in 0..capacity {
+            slots.push(UnsafeCell::new(None));
+        }
+        Arc::new(Self { next_idx: AtomicUsize::new(0), slots })
+    }
+
+    // Claim the next available slot index. Called once per worker at construction.
+    fn claim(&self) -> usize {
+        self.next_idx.fetch_add(1, Ordering::Relaxed)
+    }
+
+    // Write buf into slot. SAFETY: caller must hold the unique index for this slot.
+    unsafe fn write(&self, idx: usize, buf: Vec<u8>) {
+        if idx < self.slots.len() {
+            unsafe { *self.slots[idx].get() = Some(buf); }
+        }
+    }
+
+    // Drain all slots in index order. Called by main after all workers have exited.
+    fn drain_ordered(self: Arc<Self>) -> impl Iterator<Item = Vec<u8>> {
+        // Unwrap the Arc — main is the only holder at this point.
+        let inner = Arc::try_unwrap(self)
+            .unwrap_or_else(|_| panic!("OutputSlots Arc still shared after walk"));
+        inner.slots.into_iter().filter_map(|cell| cell.into_inner())
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Walk configuration — immutable after construction, shared via Arc
@@ -442,21 +491,24 @@ struct WorkerState {
     config: Arc<WalkConfig>,
     local_scanned: u64,
     local_found: u64,
-    /// Accumulated match output. Grown inline; moved to collector on drop.
+    /// Accumulated match output. Grown inline; written to slot on drop.
     out_buf: Vec<u8>,
-    /// Shared collector: one Mutex lock on drop, never during processing.
-    collector: OutputCollector,
+    /// Lock-free output slot array + this worker's unique slot index.
+    slots: Arc<OutputSlots>,
+    slot_idx: usize,
     totals: Totals,
 }
 
 impl WorkerState {
-    fn new(config: Arc<WalkConfig>, collector: OutputCollector, totals: Totals) -> Self {
+    fn new(config: Arc<WalkConfig>, slots: Arc<OutputSlots>, totals: Totals) -> Self {
+        let slot_idx = slots.claim(); // fetch_add once, before any hot-path work
         Self {
             config,
             local_scanned: 0,
             local_found: 0,
             out_buf: Vec::with_capacity(WORKER_BUF_CAP),
-            collector,
+            slots,
+            slot_idx,
             totals,
         }
     }
@@ -464,12 +516,11 @@ impl WorkerState {
 
 impl Drop for WorkerState {
     fn drop(&mut self) {
-        // Move the buffer into the collector — one Mutex lock per thread lifetime.
         let buf = std::mem::take(&mut self.out_buf);
         if !buf.is_empty() {
-            if let Ok(mut c) = self.collector.lock() {
-                c.push(buf);
-            }
+            // SAFETY: slot_idx is unique to this worker; no other thread writes here.
+            // main reads only after walk_parallel() returns (all workers dropped).
+            unsafe { self.slots.write(self.slot_idx, buf); }
         }
         if let Ok(mut t) = self.totals.lock() {
             t.0 += self.local_scanned;
@@ -552,7 +603,7 @@ fn should_skip_dir(path: &Path, exclude: &ExcludeList) -> bool {
 fn walk_parallel(
     root: &Path,
     config: Arc<WalkConfig>,
-    collector: OutputCollector,
+    slots: Arc<OutputSlots>,
     totals: Totals,
 ) {
     let mut builder = WalkBuilder::new(root);
@@ -574,7 +625,7 @@ fn walk_parallel(
     walker.run(|| {
         let mut state = WorkerState::new(
             Arc::clone(&config),
-            Arc::clone(&collector),
+            Arc::clone(&slots),
             Arc::clone(&totals),
         );
 
@@ -663,21 +714,22 @@ fn main() {
 
     let start = Instant::now();
     let totals: Totals = Arc::new(Mutex::new((0u64, 0u64)));
-    let collector: OutputCollector = Arc::new(Mutex::new(Vec::new()));
 
-    walk_parallel(&root, Arc::clone(&config), Arc::clone(&collector), Arc::clone(&totals));
+    // Pre-allocate one output slot per worker thread.
+    // ignore::WalkBuilder uses num_cpus by default; mirror that here.
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let slots = OutputSlots::new(num_threads + 2); // +2: small headroom
 
-    // All workers have dropped: collector is fully populated, no live Arc clones remain.
-    // Write all buffers to stdout sequentially from the main thread — one BufWriter,
-    // no locking, no synchronization.
+    walk_parallel(&root, Arc::clone(&config), Arc::clone(&slots), Arc::clone(&totals));
+
+    // All workers have exited (walk_parallel blocks until completion).
+    // Drain slots in index order and write to stdout — no locking, no sync.
     {
         let stdout = std::io::stdout();
         let mut out = BufWriter::with_capacity(WRITER_BUF_CAP, stdout.lock());
-        let buffers = Arc::try_unwrap(collector)
-            .unwrap_or_else(|a| Mutex::new(std::mem::take(&mut *a.lock().unwrap())))
-            .into_inner()
-            .unwrap();
-        for buf in buffers {
+        for buf in slots.drain_ordered() {
             let _ = out.write_all(&buf);
         }
     }
