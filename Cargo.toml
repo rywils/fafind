@@ -1,27 +1,34 @@
 [package]
 name = "fafind"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+description = "Fast parallel filesystem search by filename"
+license = "MIT"
+repository = "https://github.com/rywils/fafind"
+homepage = "https://github.com/rywils/fafind"
+documentation = "https://docs.rs/fafind"
+readme = "README.md"
+
+keywords = ["cli", "search", "filesystem", "find", "fast"]
+categories = ["command-line-utilities"]
+
+include = [
+    "src/**",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE"
+]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 ignore = "0.4"
-# memchr is also a transitive dep of ignore, but we declare it directly because
-# we use memmem in hot-path matching code. Relying solely on a transitive dep
-# would silently break if ignore ever removed it.
 memchr = "2.7"
-# smallvec: stack-allocated vec for small exclude lists (avoids heap + hash overhead)
 smallvec = { version = "1.13", features = ["union"] }
 
 [profile.release]
-# Link-time optimization: inlines across crate boundaries, removes dead code
 lto = "thin"
-# Single codegen unit: allows full cross-function inlining/optimization
 codegen-units = 1
-# panic=abort: eliminates unwinding machinery (~10-20% binary size reduction,
-# avoids stack-unwind overhead in hot paths)
 panic = "abort"
-# Optimize for native CPU instruction set (enables AVX2 etc. where available)
-# NOTE: binaries built with this won't run on older CPUs
-# rustflags = ["-C", "target-cpu=native"]  # enable via RUSTFLAGS instead
 opt-level = 3
+
+strip = true
