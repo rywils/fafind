@@ -8,9 +8,9 @@ pkgbase = fafind-bin
 	license = MIT
 	provides = fafind
 	conflicts = fafind
-	source_x86_64 = fafind-x86_64-unknown-linux-gnu-1.0.0.tar.gz::https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-x86_64-unknown-linux-gnu.tar.gz
-	sha256sums_x86_64 = SKIP
-	source_aarch64 = fafind-aarch64-unknown-linux-gnu-1.0.0.tar.gz::https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-aarch64-unknown-linux-gnu.tar.gz
-	sha256sums_aarch64 = SKIP
+	source_x86_64 = fafind-linux-x86_64-1.0.0.tar.gz::https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-linux-x86_64-v1.0.0.tar.gz
+	sha256sums_x86_64 = 215c2df984c5744e4331dbc5f96323a970d3cea27852126530702a576b085b21
+	source_aarch64 = fafind-linux-arm64-1.0.0.tar.gz::https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-linux-arm64-v1.0.0.tar.gz
+	sha256sums_aarch64 = 1bc1a1870f54c25f4e02a65414405cd805cd2dc0f3ca7d4a6d1f77fbd80a264b
 
 pkgname = fafind-bin

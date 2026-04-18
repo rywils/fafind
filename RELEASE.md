@@ -35,8 +35,8 @@ The release is available at:
 After the release is published, compute the checksums:
 
 ```sh
-curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-x86_64-unknown-linux-gnu.tar.gz | sha256sum
-curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-aarch64-unknown-linux-gnu.tar.gz | sha256sum
+curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-x86_64-linux-gnu.tar.gz | sha256sum
+curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-aarch64-linux-gnu.tar.gz | sha256sum
 ```
 
 Paste the results into `PKGBUILD`:
@@ -63,4 +63,4 @@ curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-x86_64
 curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-aarch64-apple-darwin.tar.gz | sha256sum
 ```
 
-Replace the `PLACEHOLDER_*` values in `fafind.rb` and bump `version`. Submit a PR to tap or run `brew bump-formula-pr` if using homebrew-core.
+Replace the hash or placeholder values in `fafind.rb` and bump `version`. Submit a PR to tap or run `brew bump-formula-pr` if using homebrew-core.
