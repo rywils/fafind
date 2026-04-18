@@ -101,7 +101,7 @@ Only exact filename match (including extension).
 
 ## flags
 
-### case insensitive
+### case insensitive (`-i` / `--ignore-case`)
 
 ~~~bash
 fafind -i readme .
@@ -138,11 +138,12 @@ fafind --gitignore main .
 ~~~bash
 fafind --type f main .   # files only
 fafind --type d src .    # directories only
+fafind --type a main .   # any (default)
 ~~~
 
 ---
 
-### null-separated output (for scripting)
+### null-separated output (`-0` / `--null`)
 
 ~~~bash
 fafind -0 main . | xargs -0 rm
@@ -156,16 +157,19 @@ fafind -0 main . | xargs -0 rm
 fafind -v main .
 ~~~
 
-Prints:
+Sends to **stderr**:
 
-- every scanned file  
-- matches  
-- skipped directories  
-- errors  
+- `[SCAN]` for every visited entry  
+- `[SKIP]` for excluded directories  
+- `[ERROR]` for unreadable entries  
+
+Matches are still written to **stdout** as normal.
 
 ---
 
-### quiet mode (no summary)
+### quiet mode (`-q` / `--quiet`)
+
+Suppresses the summary line printed to stderr after the search completes.
 
 ~~~bash
 fafind -q main .
