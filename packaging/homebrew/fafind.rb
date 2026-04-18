@@ -6,13 +6,13 @@ class Fafind < Formula
 
   on_macos do
     on_intel do
-      url "https://github.com/rywils/fafind/releases/download/v#{version}/fafind-x86_64-apple-darwin.tar.gz"
-      sha256 "PLACEHOLDER_x86_64_apple_darwin"
+      url "https://github.com/rywils/fafind/releases/download/v#{version}/fafind-macos-x86_64-v#{version}.tar.gz"
+      sha256 "0019dfc4b32d63c1392aa264aed2253c1e0c2fb09216f8e2cc269bbfb8bb49b5"
     end
 
     on_arm do
-      url "https://github.com/rywils/fafind/releases/download/v#{version}/fafind-aarch64-apple-darwin.tar.gz"
-      sha256 "PLACEHOLDER_aarch64_apple_darwin"
+      url "https://github.com/rywils/fafind/releases/download/v#{version}/fafind-macos-arm64-v#{version}.tar.gz"
+      sha256 "0ad10e59911d3059cc5dfaf2da218adb945740d840617810008971f00f4c2ada"
     end
   end
 
