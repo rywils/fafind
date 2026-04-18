@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build ${{ matrix.target }}
@@ -27,7 +30,7 @@ jobs:
             os: macos-14
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -51,13 +54,41 @@ jobs:
         run: |
           BINARY=fafind
           TARGET=${{ matrix.target }}
-          ARCHIVE=fafind-${TARGET}.tar.gz
+          VERSION=${GITHUB_REF_NAME}
+
+          # Map Rust target -> clean name
+          case "$TARGET" in
+            x86_64-unknown-linux-gnu)
+              NAME="linux-x86_64"
+              ;;
+            aarch64-unknown-linux-gnu)
+              NAME="linux-arm64"
+              ;;
+            x86_64-apple-darwin)
+              NAME="macos-x86_64"
+              ;;
+            aarch64-apple-darwin)
+              NAME="macos-arm64"
+              ;;
+            *)
+              NAME="$TARGET"
+              ;;
+          esac
+
+          ARCHIVE="fafind-${NAME}-${VERSION}.tar.gz"
+
           cp target/${TARGET}/release/${BINARY} ${BINARY}
+
+          if command -v strip >/dev/null 2>&1; then
+            strip ${BINARY} || true
+          fi
+
           tar czf ${ARCHIVE} ${BINARY}
+
           echo "ARCHIVE=${ARCHIVE}" >> $GITHUB_ENV
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.ARCHIVE }}
           fail_on_unmatched_files: true
