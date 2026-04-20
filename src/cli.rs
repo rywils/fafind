@@ -1,4 +1,4 @@
-use clap::{ArgGroup, Parser, ValueEnum};
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
 const AFTER_HELP: &str = r#"Matching modes (default: stem — strips extension, exact stem match):
@@ -15,22 +15,15 @@ Other examples:
 
 #[derive(Parser, Debug)]
 #[command(name = "fafind")]
-#[command(version = "1.0.1")]
+#[command(version)]
 #[command(about = "Fast filesystem search by filename")]
 #[command(after_help = AFTER_HELP)]
-#[command(group(ArgGroup::new("mode").args(["substr", "precise"]).multiple(false)))]
+#[command(arg_required_else_help = true)]
 pub struct Cli {
-    pub target: String,
-
-    #[arg(value_name = "ROOT")]
-    pub root: Option<PathBuf>,
-
-    /// Substring match: find files whose name contains TARGET anywhere
-    #[arg(short = 's', long, group = "mode")]
+    #[arg(short = 's', long)]
     pub substr: bool,
 
-    /// Exact match: full filename must equal TARGET (including extension)
-    #[arg(short = 'p', long, group = "mode")]
+    #[arg(short = 'p', long)]
     pub precise: bool,
 
     /// Print every scanned file
@@ -42,19 +35,17 @@ pub struct Cli {
     pub ignore_case: bool,
 
     /// Filter by entry type: f = files only, d = directories only
-    #[arg(long = "type", value_name = "f|d")]
+    #[arg(long = "type")]
     pub entry_type: Option<String>,
 
     /// Separate output with NUL instead of newline (for xargs -0)
     #[arg(short = '0', long = "null")]
     pub null: bool,
 
-    /// Maximum directory depth to recurse into
-    #[arg(long, value_name = "N")]
+    #[arg(long)]
     pub max_depth: Option<usize>,
 
-    /// Comma-separated list of directory names to exclude
-    #[arg(long, value_name = "DIRS", value_delimiter = ',')]
+    #[arg(long, value_delimiter = ',')]
     pub exclude: Vec<String>,
 
     /// Respect .gitignore files
@@ -65,13 +56,18 @@ pub struct Cli {
     #[arg(short = 'q', long)]
     pub quiet: bool,
 
-    /// Colorize matches: auto = only when stdout is a TTY
-    #[arg(long, value_enum, default_value_t = ColorWhen::Auto)]
-    pub color: ColorWhen,
+    #[arg(long, value_enum, default_value = "auto")]
+    pub color: ColorMode,
+
+    #[arg(value_name = "TARGET")]
+    pub target: String,
+
+    #[arg(value_name = "ROOT")]
+    pub root: Option<PathBuf>,
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
-pub enum ColorWhen {
+#[derive(ValueEnum, Clone, Debug)]
+pub enum ColorMode {
     Auto,
     Always,
     Never,
