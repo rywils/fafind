@@ -11,8 +11,8 @@ conflicts=('fafind')
 _url="https://github.com/rywils/fafind/releases/download/v${pkgver}"
 source_x86_64=("fafind-x86_64-${pkgver}.tar.gz::${_url}/fafind-linux-x86_64-v${pkgver}.tar.gz")
 source_aarch64=("fafind-arm64-${pkgver}.tar.gz::${_url}/fafind-linux-arm64-v${pkgver}.tar.gz")
-sha256sums_x86_64=('22142d4094d0aee2a976014bcfde9c7a5b99d28224e468bc166f465dd33c3f55')
-sha256sums_aarch64=('39cf53ef627df6d33220c4bdb24429f4ee5bf6d91fcd9f7d9975ea797f441efc')
+sha256sums_x86_64=('1bc6c02ac9f7a9203320b0bc7723767c89ec96633e0063df4cd19472e56e4ba0')
+sha256sums_aarch64=('60b358eb2c421ac3299467ad6279c4a3b087be209adde7e1590be83489e91edf')
 
 package() {
     install -Dm755 fafind "${pkgdir}/usr/bin/fafind"
