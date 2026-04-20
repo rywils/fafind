@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::config::{EntryType, WalkConfig};
 use crate::output::OutputSlots;
-use crate::util::append_path;
+use crate::util::{append_path, append_path_highlight};
 
 pub const WORKER_BUF_CAP: usize = 256 * 1024; // 256 KB initial capacity per worker
 
@@ -79,7 +79,11 @@ pub fn process_entry(path: &Path, is_dir: bool, state: &mut WorkerState) {
             let s = format!("[MATCH] {}\n", path.display());
             state.out_buf.extend_from_slice(s.as_bytes());
         } else {
-            append_path(&mut state.out_buf, path, cfg.null_terminate);
+            if cfg.color {
+                append_path_highlight(&mut state.out_buf, path, cfg);
+            } else {
+                append_path(&mut state.out_buf, path, cfg.null_terminate);
+            }
         }
     }
 }

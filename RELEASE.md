@@ -5,8 +5,8 @@
 Update the version in `Cargo.toml` and `Cargo.lock` (`cargo build --release`), commit, then:
 
 ```sh
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.1
+git push origin v1.0.1
 ```
 
 Tagging is the only step required to build and publish binaries.
@@ -26,7 +26,7 @@ On every `v*` tag push, `.github/workflows/release.yml`:
 3. Creates a GitHub Release for the tag and uploads all four archives
 
 The release is available at:
-`https://github.com/rywils/fafind/releases/tag/v1.0.0`
+`https://github.com/rywils/fafind/releases/tag/v1.0.1`
 
 ---
 
@@ -35,8 +35,8 @@ The release is available at:
 After the release is published, compute the checksums:
 
 ```sh
-curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-x86_64-linux-gnu.tar.gz | sha256sum
-curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-aarch64-linux-gnu.tar.gz | sha256sum
+curl -sL https://github.com/rywils/fafind/releases/download/v1.0.1/fafind-x86_64-linux-gnu.tar.gz | sha256sum
+curl -sL https://github.com/rywils/fafind/releases/download/v1.0.1/fafind-aarch64-linux-gnu.tar.gz | sha256sum
 ```
 
 Paste the results into `PKGBUILD`:
@@ -59,8 +59,8 @@ Push both files to the AUR git repository.
 ## 4. Update Homebrew formula sha256
 
 ```sh
-curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-x86_64-apple-darwin.tar.gz | sha256sum
-curl -sL https://github.com/rywils/fafind/releases/download/v1.0.0/fafind-aarch64-apple-darwin.tar.gz | sha256sum
+curl -sL https://github.com/rywils/fafind/releases/download/v1.0.1/fafind-x86_64-apple-darwin.tar.gz | sha256sum
+curl -sL https://github.com/rywils/fafind/releases/download/v1.0.1/fafind-aarch64-apple-darwin.tar.gz | sha256sum
 ```
 
 Replace the hash or placeholder values in `fafind.rb` and bump `version`. Submit a PR to tap or run `brew bump-formula-pr` if using homebrew-core.

@@ -1,6 +1,6 @@
 # Maintainer: Ryan Wilson <ryan@ryanwilson.io>
 pkgname=fafind-bin
-pkgver=1.0.0
+pkgver=1.0.1
 pkgrel=1
 pkgdesc="Fast parallel filesystem search by filename"
 arch=('x86_64' 'aarch64')

@@ -1,5 +1,11 @@
 use std::path::Path;
 
+use crate::config::{MatchMode, WalkConfig};
+use crate::matcher::stem_bytes;
+
+const ANSI_GREEN: &[u8] = b"\x1b[32m";
+const ANSI_RESET: &[u8] = b"\x1b[0m";
+
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
@@ -24,4 +30,124 @@ pub fn append_path(buf: &mut Vec<u8>, path: &Path, null_terminate: bool) {
         };
         buf.extend_from_slice(s.as_bytes());
     }
+}
+
+#[inline(always)]
+pub fn append_path_highlight(buf: &mut Vec<u8>, path: &Path, cfg: &WalkConfig) {
+    if cfg.null_terminate || !cfg.color {
+        append_path(buf, path, cfg.null_terminate);
+        return;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+
+        let full = path.as_os_str().as_bytes();
+        let slash = full.iter().rposition(|&b| b == b'/');
+        let (prefix, name_bytes) = match slash {
+            Some(i) => (&full[..=i], &full[i + 1..]),
+            None => (&[][..], full),
+        };
+
+        buf.extend_from_slice(prefix);
+
+        let Ok(_name_str) = std::str::from_utf8(name_bytes) else {
+            buf.extend_from_slice(name_bytes);
+            buf.push(b'\n');
+            return;
+        };
+
+        match cfg.match_mode {
+            MatchMode::Precise => {
+                buf.extend_from_slice(ANSI_GREEN);
+                buf.extend_from_slice(name_bytes);
+                buf.extend_from_slice(ANSI_RESET);
+            }
+            MatchMode::Standard => {
+                let stem_len = stem_bytes(name_bytes).len();
+                buf.extend_from_slice(ANSI_GREEN);
+                buf.extend_from_slice(&name_bytes[..stem_len]);
+                buf.extend_from_slice(ANSI_RESET);
+                buf.extend_from_slice(&name_bytes[stem_len..]);
+            }
+            MatchMode::Substr => {
+                if cfg.ignore_case {
+                    if !name_bytes.is_ascii() || !cfg.target_canonical.is_ascii() {
+                        buf.extend_from_slice(name_bytes);
+                        buf.push(b'\n');
+                        return;
+                    }
+                    highlight_substr_ascii_ignore_case(buf, name_bytes, &cfg.target_canonical);
+                } else {
+                    highlight_substr_bytes(buf, name_bytes, cfg.target_raw.as_bytes());
+                }
+            }
+        }
+
+        buf.push(b'\n');
+        return;
+    }
+
+    #[cfg(not(unix))]
+    {
+        append_path(buf, path, false);
+    }
+}
+
+#[inline(always)]
+fn highlight_substr_bytes(buf: &mut Vec<u8>, name: &[u8], needle: &[u8]) {
+    if needle.is_empty() {
+        buf.extend_from_slice(name);
+        return;
+    }
+
+    let mut i = 0usize;
+    while i <= name.len() {
+        let Some(rel) = memchr::memmem::find(&name[i..], needle) else {
+            buf.extend_from_slice(&name[i..]);
+            return;
+        };
+        let at = i + rel;
+        buf.extend_from_slice(&name[i..at]);
+        buf.extend_from_slice(ANSI_GREEN);
+        buf.extend_from_slice(&name[at..at + needle.len()]);
+        buf.extend_from_slice(ANSI_RESET);
+        i = at + needle.len();
+    }
+}
+
+#[inline(always)]
+fn highlight_substr_ascii_ignore_case(buf: &mut Vec<u8>, name: &[u8], needle_lower: &[u8]) {
+    if needle_lower.is_empty() {
+        buf.extend_from_slice(name);
+        return;
+    }
+
+    let n = needle_lower.len();
+    let mut i = 0usize;
+    let mut last = 0usize;
+
+    while i + n <= name.len() {
+        let mut j = 0usize;
+        while j < n {
+            if name[i + j].to_ascii_lowercase() != needle_lower[j] {
+                break;
+            }
+            j += 1;
+        }
+
+        if j == n {
+            buf.extend_from_slice(&name[last..i]);
+            buf.extend_from_slice(ANSI_GREEN);
+            buf.extend_from_slice(&name[i..i + n]);
+            buf.extend_from_slice(ANSI_RESET);
+            i += n;
+            last = i;
+        } else {
+            i += 1;
+        }
+    }
+
+    buf.extend_from_slice(&name[last..]);
 }
