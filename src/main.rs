@@ -7,12 +7,12 @@ mod walker;
 mod worker;
 
 use clap::Parser;
-use std::io::{BufWriter, IsTerminal, Write};
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use cli::{Cli, ColorWhen};
+use cli::{Cli, ColorMode};
 use config::{EntryType, ExcludeList, MatchMode, WalkConfig};
 use matcher::MatchTarget;
 use output::OutputSlots;
@@ -23,6 +23,11 @@ const WRITER_BUF_CAP: usize = 256 * 1024;
 
 fn main() {
     let cli = Cli::parse();
+
+    if cli.substr && cli.precise {
+        eprintln!("error: cannot use -s and -p together");
+        std::process::exit(2);
+    }
 
     let mode = if cli.substr {
         MatchMode::Substr
@@ -50,12 +55,12 @@ fn main() {
         .map(|s| s.as_bytes().to_vec().into_boxed_slice())
         .collect();
 
-    let stdout_is_tty = std::io::stdout().is_terminal();
+    let stdout_is_tty = atty::is(atty::Stream::Stdout);
     let color = !cli.null
         && match cli.color {
-            ColorWhen::Never => false,
-            ColorWhen::Always => true,
-            ColorWhen::Auto => stdout_is_tty,
+            ColorMode::Never => false,
+            ColorMode::Always => true,
+            ColorMode::Auto => stdout_is_tty,
         };
 
     let target_raw: Arc<str> = cli.target.clone().into();

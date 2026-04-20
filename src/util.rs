@@ -3,8 +3,10 @@ use std::path::Path;
 use crate::config::{MatchMode, WalkConfig};
 use crate::matcher::stem_bytes;
 
-const ANSI_GREEN: &[u8] = b"\x1b[32m";
-const ANSI_RESET: &[u8] = b"\x1b[0m";
+const GREEN: &[u8] = b"\x1b[32m";
+const DIM: &[u8] = b"\x1b[2m";
+const BOLD: &[u8] = b"\x1b[1m";
+const RESET: &[u8] = b"\x1b[0m";
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
@@ -50,37 +52,52 @@ pub fn append_path_highlight(buf: &mut Vec<u8>, path: &Path, cfg: &WalkConfig) {
             None => (&[][..], full),
         };
 
-        buf.extend_from_slice(prefix);
-
-        let Ok(_name_str) = std::str::from_utf8(name_bytes) else {
-            buf.extend_from_slice(name_bytes);
-            buf.push(b'\n');
-            return;
-        };
+        if !prefix.is_empty() {
+            buf.extend_from_slice(DIM);
+            buf.extend_from_slice(prefix);
+            buf.extend_from_slice(RESET);
+        }
 
         match cfg.match_mode {
             MatchMode::Precise => {
-                buf.extend_from_slice(ANSI_GREEN);
+                buf.extend_from_slice(BOLD);
+                buf.extend_from_slice(GREEN);
                 buf.extend_from_slice(name_bytes);
-                buf.extend_from_slice(ANSI_RESET);
+                buf.extend_from_slice(RESET);
             }
             MatchMode::Standard => {
                 let stem_len = stem_bytes(name_bytes).len();
-                buf.extend_from_slice(ANSI_GREEN);
+                buf.extend_from_slice(GREEN);
                 buf.extend_from_slice(&name_bytes[..stem_len]);
-                buf.extend_from_slice(ANSI_RESET);
-                buf.extend_from_slice(&name_bytes[stem_len..]);
+                buf.extend_from_slice(RESET);
+
+                let ext = &name_bytes[stem_len..];
+                if !ext.is_empty() {
+                    buf.extend_from_slice(DIM);
+                    buf.extend_from_slice(ext);
+                    buf.extend_from_slice(RESET);
+                }
             }
             MatchMode::Substr => {
+                let stem_len = stem_bytes(name_bytes).len();
+                let ext = &name_bytes[stem_len..];
+
                 if cfg.ignore_case {
                     if !name_bytes.is_ascii() || !cfg.target_canonical.is_ascii() {
                         buf.extend_from_slice(name_bytes);
                         buf.push(b'\n');
                         return;
                     }
-                    highlight_substr_ascii_ignore_case(buf, name_bytes, &cfg.target_canonical);
+                    highlight_substr_ascii_ignore_case(buf, &name_bytes[..stem_len], &cfg.target_canonical);
                 } else {
-                    highlight_substr_bytes(buf, name_bytes, cfg.target_raw.as_bytes());
+                    let needle = cfg.target_raw.as_bytes();
+                    highlight_substr_bytes(buf, &name_bytes[..stem_len], needle);
+                }
+
+                if !ext.is_empty() {
+                    buf.extend_from_slice(DIM);
+                    buf.extend_from_slice(ext);
+                    buf.extend_from_slice(RESET);
                 }
             }
         }
@@ -110,9 +127,9 @@ fn highlight_substr_bytes(buf: &mut Vec<u8>, name: &[u8], needle: &[u8]) {
         };
         let at = i + rel;
         buf.extend_from_slice(&name[i..at]);
-        buf.extend_from_slice(ANSI_GREEN);
+        buf.extend_from_slice(GREEN);
         buf.extend_from_slice(&name[at..at + needle.len()]);
-        buf.extend_from_slice(ANSI_RESET);
+        buf.extend_from_slice(RESET);
         i = at + needle.len();
     }
 }
@@ -139,9 +156,9 @@ fn highlight_substr_ascii_ignore_case(buf: &mut Vec<u8>, name: &[u8], needle_low
 
         if j == n {
             buf.extend_from_slice(&name[last..i]);
-            buf.extend_from_slice(ANSI_GREEN);
+            buf.extend_from_slice(GREEN);
             buf.extend_from_slice(&name[i..i + n]);
-            buf.extend_from_slice(ANSI_RESET);
+            buf.extend_from_slice(RESET);
             i += n;
             last = i;
         } else {
