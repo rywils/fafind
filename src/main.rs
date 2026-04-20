@@ -7,12 +7,12 @@ mod walker;
 mod worker;
 
 use clap::Parser;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use cli::Cli;
+use cli::{Cli, ColorWhen};
 use config::{EntryType, ExcludeList, MatchMode, WalkConfig};
 use matcher::MatchTarget;
 use output::OutputSlots;
@@ -50,14 +50,34 @@ fn main() {
         .map(|s| s.as_bytes().to_vec().into_boxed_slice())
         .collect();
 
+    let stdout_is_tty = std::io::stdout().is_terminal();
+    let color = !cli.null
+        && match cli.color {
+            ColorWhen::Never => false,
+            ColorWhen::Always => true,
+            ColorWhen::Auto => stdout_is_tty,
+        };
+
+    let target_raw: Arc<str> = cli.target.clone().into();
+    let target_canonical: Arc<[u8]> = if cli.ignore_case {
+        cli.target.to_ascii_lowercase().into_bytes().into()
+    } else {
+        cli.target.as_bytes().to_vec().into_boxed_slice().into()
+    };
+
     let config = Arc::new(WalkConfig {
         target: MatchTarget::new(&cli.target, mode, cli.ignore_case),
+        target_raw,
+        target_canonical,
+        match_mode: mode,
+        ignore_case: cli.ignore_case,
         max_depth: cli.max_depth,
         exclude: Arc::new(exclude),
         entry_type,
         null_terminate: cli.null,
         gitignore: cli.gitignore,
         verbose: cli.verbose,
+        color,
     });
 
     let start = Instant::now();

@@ -1,4 +1,4 @@
-use clap::{ArgGroup, Parser};
+use clap::{ArgGroup, Parser, ValueEnum};
 use std::path::PathBuf;
 
 const AFTER_HELP: &str = r#"Matching modes (default: stem — strips extension, exact stem match):
@@ -15,7 +15,7 @@ Other examples:
 
 #[derive(Parser, Debug)]
 #[command(name = "fafind")]
-#[command(version = "1.0.0")]
+#[command(version = "1.0.1")]
 #[command(about = "Fast filesystem search by filename")]
 #[command(after_help = AFTER_HELP)]
 #[command(group(ArgGroup::new("mode").args(["substr", "precise"]).multiple(false)))]
@@ -64,4 +64,15 @@ pub struct Cli {
     /// Suppress the summary line (scanned/found/elapsed)
     #[arg(short = 'q', long)]
     pub quiet: bool,
+
+    /// Colorize matches: auto = only when stdout is a TTY
+    #[arg(long, value_enum, default_value_t = ColorWhen::Auto)]
+    pub color: ColorWhen,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum ColorWhen {
+    Auto,
+    Always,
+    Never,
 }
