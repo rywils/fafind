@@ -55,9 +55,23 @@ impl MatchTarget {
     ///   - Only triggered when a byte ≥ 128 is present in the filename.
     ///   - Falls back to `to_lowercase()` which may allocate, but this is the
     ///     rare case
+    /// Cheap rejection before the full matcher runs.
+    #[inline(always)]
+    pub fn might_match(&self, bytes: &[u8]) -> bool {
+        let len = bytes.len();
+        match self.mode {
+            MatchMode::Precise => len == self.canonical_len,
+            MatchMode::Standard => stem_bytes(bytes).len() == self.canonical_len,
+            MatchMode::Substr => len >= self.canonical_len,
+        }
+    }
+
     #[inline(always)]
     pub fn is_match(&self, filename: &OsStr) -> bool {
         let bytes = filename.as_encoded_bytes();
+        if !self.might_match(bytes) {
+            return false;
+        }
 
         match self.mode {
             MatchMode::Precise => self.match_precise(bytes),

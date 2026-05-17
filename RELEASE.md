@@ -5,8 +5,8 @@
 Update the version in `Cargo.toml` and `Cargo.lock` (`cargo build --release`), commit, then:
 
 ```sh
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 Tagging is the only step required to build and publish binaries.
@@ -17,50 +17,57 @@ Updating AUR and Homebrew formulas is still manual.
 
 On every `v*` tag push, `.github/workflows/release.yml`:
 
-1. Builds release binaries for all four targets in parallel:
+1. Builds release binaries for three targets in parallel:
    - `x86_64-unknown-linux-gnu` (native, Ubuntu runner)
    - `aarch64-unknown-linux-gnu` (via `cross`, Ubuntu runner)
-   - `x86_64-apple-darwin` (native, macOS 13 runner)
    - `aarch64-apple-darwin` (native, macOS 14 runner)
-2. Packages each binary as `fafind-<target>.tar.gz`
-3. Creates a GitHub Release for the tag and uploads all four archives
+2. Packages each Linux/macOS binary as `fafind-<platform>-<tag>.tar.gz` (e.g. `fafind-linux-x86_64-v1.1.0.tar.gz`)
+3. Creates a GitHub Release for the tag and uploads all archives
 
 The release is available at:
-`https://github.com/rywils/fafind/releases/tag/v1.0.1`
+`https://github.com/rywils/fafind/releases/tag/v1.1.0`
+
+Each Linux tarball contains one `fafind` binary. The AUR package installs `faf` as a symlink to that binary.
 
 ---
 
-## 3. Update AUR sha256sums
+## 3. Publish to AUR (`fafind-bin`)
 
-After the release is published, compute the checksums:
+Full checklist: [`packaging/aur/README.md`](packaging/aur/README.md)
 
-```sh
-curl -sL https://github.com/rywils/fafind/releases/download/v1.0.1/fafind-x86_64-linux-gnu.tar.gz | sha256sum
-curl -sL https://github.com/rywils/fafind/releases/download/v1.0.1/fafind-aarch64-linux-gnu.tar.gz | sha256sum
-```
-
-Paste the results into `PKGBUILD`:
+After the GitHub release assets are live:
 
 ```sh
-sha256sums_x86_64=('<hash>')
-sha256sums_aarch64=('<hash>')
+cd packaging/aur
+./update-checksums.sh   # requires makepkg / updpkgsums on Arch
+makepkg -si             # optional local smoke test
 ```
 
-Then regenerate `.SRCINFO`:
+Push `PKGBUILD` and `.SRCINFO` to `aur@aur.archlinux.org:fafind-bin.git`:
 
 ```sh
-makepkg --printsrcinfo > .SRCINFO
+git clone ssh://aur@aur.archlinux.org/fafind-bin.git
+cd fafind-bin
+cp /path/to/fafind/packaging/aur/PKGBUILD .
+cp /path/to/fafind/packaging/aur/.SRCINFO .
+git add PKGBUILD .SRCINFO
+git commit -m "upg: fafind-bin 1.1.0"
+git push
 ```
 
-Push both files to the AUR git repository.
+Linux release URLs used by the PKGBUILD:
+
+| Arch | URL path |
+|------|----------|
+| x86_64 | `.../fafind-linux-x86_64-v1.1.0.tar.gz` |
+| aarch64 | `.../fafind-linux-arm64-v1.1.0.tar.gz` |
 
 ---
 
 ## 4. Update Homebrew formula sha256
 
 ```sh
-curl -sL https://github.com/rywils/fafind/releases/download/v1.0.1/fafind-x86_64-apple-darwin.tar.gz | sha256sum
-curl -sL https://github.com/rywils/fafind/releases/download/v1.0.1/fafind-aarch64-apple-darwin.tar.gz | sha256sum
+curl -sL https://github.com/rywils/fafind/releases/download/v1.1.0/fafind-macos-arm64-v1.1.0.tar.gz | sha256sum
 ```
 
 Replace the hash or placeholder values in `fafind.rb` and bump `version`. Submit a PR to tap or run `brew bump-formula-pr` if using homebrew-core.

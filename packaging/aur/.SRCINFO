@@ -1,16 +1,21 @@
 pkgbase = fafind-bin
-	pkgdesc = Fast parallel filesystem search by filename
-	pkgver = 1.0.1
+	pkgdesc = Fast parallel filesystem search by filename (faf / fafind)
+	pkgver = 1.1.0
 	pkgrel = 1
 	url = https://github.com/rywils/fafind
 	arch = x86_64
 	arch = aarch64
 	license = MIT
 	provides = fafind
+	provides = faf
 	conflicts = fafind
-	source_x86_64 = fafind-x86_64-1.0.1.tar.gz::https://github.com/rywils/fafind/releases/download/v1.0.1/fafind-linux-x86_64-v1.0.1.tar.gz
-	sha256sums_x86_64 = 215c2df984c5744e4331dbc5f96323a970d3cea27852126530702a576b085b21
-	source_aarch64 = fafind-arm64-1.0.1.tar.gz::https://github.com/rywils/fafind/releases/download/v1.0.1/fafind-linux-arm64-v1.0.1.tar.gz
-	sha256sums_aarch64 = 1bc1a1870f54c25f4e02a65414405cd805cd2dc0f3ca7d4a6d1f77fbd80a264b
+	options = !debug
+	options = strip
+	source = LICENSE::https://raw.githubusercontent.com/rywils/fafind/v1.1.0/LICENSE
+	source_x86_64 = fafind-x86_64-1.1.0.tar.gz::https://github.com/rywils/fafind/releases/download/v1.1.0/fafind-linux-x86_64-v1.1.0.tar.gz
+	sha256sums = SKIP
+	sha256sums_x86_64 = SKIP
+	source_aarch64 = fafind-arm64-1.1.0.tar.gz::https://github.com/rywils/fafind/releases/download/v1.1.0/fafind-linux-arm64-v1.1.0.tar.gz
+	sha256sums_aarch64 = SKIP
 
 pkgname = fafind-bin

@@ -1,27 +1,74 @@
 use std::io::Write;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use crate::config::{EntryType, WalkConfig};
+use crate::matcher::MatchTarget;
 use crate::util::{append_path, append_path_highlight};
 
 pub const WORKER_BUF_CAP: usize = 256 * 1024; // 256 KB initial capacity per worker
+/// Batch match output before taking the stdout lock (TTY / non-piped runs).
+const STREAM_BATCH_THRESHOLD: usize = 64 * 1024;
 
-pub type Totals = Arc<Mutex<(u64, u64)>>; // (scanned, found)
+/// Shared scan counters; workers accumulate locally and publish once on drop.
+pub struct Totals {
+    scanned: AtomicU64,
+    found: AtomicU64,
+}
+
+impl Totals {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            scanned: AtomicU64::new(0),
+            found: AtomicU64::new(0),
+        })
+    }
+
+    pub fn snapshot(&self) -> (u64, u64) {
+        (
+            self.scanned.load(Ordering::Relaxed),
+            self.found.load(Ordering::Relaxed),
+        )
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EntryFilter {
+    Any,
+    FileOnly,
+    DirOnly,
+}
 
 /// Worker state: entirely private per-thread.
-/// Match lines are formatted in `out_buf` without locking; stdout is locked only to write.
 pub struct WorkerState {
+    target: MatchTarget,
+    entry_filter: EntryFilter,
+    pub verbose: bool,
+    color: bool,
+    null_terminate: bool,
+    stdout_block_buffered: bool,
     pub config: Arc<WalkConfig>,
-    pub local_scanned: u64,
-    pub local_found: u64,
-    pub out_buf: Vec<u8>,
-    pub totals: Totals,
+    local_scanned: u64,
+    local_found: u64,
+    out_buf: Vec<u8>,
+    totals: Arc<Totals>,
 }
 
 impl WorkerState {
-    pub fn new(config: Arc<WalkConfig>, totals: Totals) -> Self {
+    pub fn new(config: Arc<WalkConfig>, totals: Arc<Totals>) -> Self {
+        let entry_filter = match config.entry_type {
+            EntryType::File => EntryFilter::FileOnly,
+            EntryType::Dir => EntryFilter::DirOnly,
+            EntryType::Any => EntryFilter::Any,
+        };
         Self {
+            target: config.target.clone(),
+            entry_filter,
+            verbose: config.verbose,
+            color: config.color,
+            null_terminate: config.null_terminate,
+            stdout_block_buffered: config.stdout_block_buffered,
             config,
             local_scanned: 0,
             local_found: 0,
@@ -33,59 +80,65 @@ impl WorkerState {
 
 impl Drop for WorkerState {
     fn drop(&mut self) {
-        flush_out_buf(&mut self.out_buf, &self.config);
-        if let Ok(mut t) = self.totals.lock() {
-            t.0 += self.local_scanned;
-            t.1 += self.local_found;
-        }
+        flush_out_buf(&mut self.out_buf, self.stdout_block_buffered);
+        self.totals
+            .scanned
+            .fetch_add(self.local_scanned, Ordering::Relaxed);
+        self.totals
+            .found
+            .fetch_add(self.local_found, Ordering::Relaxed);
     }
 }
 
-/// Write pending match bytes to stdout. Formatting stays lock-free; lock covers one write only.
+/// Write pending match bytes to stdout.
 #[inline(always)]
-fn flush_out_buf(out_buf: &mut Vec<u8>, config: &WalkConfig) {
+fn flush_out_buf(out_buf: &mut Vec<u8>, stdout_block_buffered: bool) {
     if out_buf.is_empty() {
         return;
     }
     let mut stdout = std::io::stdout().lock();
     let _ = stdout.write_all(out_buf);
-    if config.stdout_block_buffered {
+    if stdout_block_buffered {
         let _ = stdout.flush();
     }
     out_buf.clear();
 }
 
+#[inline(always)]
+fn maybe_flush_matches(out_buf: &mut Vec<u8>, stdout_block_buffered: bool) {
+    if stdout_block_buffered || out_buf.len() >= STREAM_BATCH_THRESHOLD {
+        flush_out_buf(out_buf, stdout_block_buffered);
+    }
+}
+
 /// Hot path: called for every filesystem entry.
-/// Zero syscalls, zero heap allocations, zero shared-memory writes (except match flush).
 #[inline(always)]
 pub fn process_entry(path: &Path, is_dir: bool, state: &mut WorkerState) {
     state.local_scanned += 1;
 
-    match state.config.entry_type {
-        EntryType::File if is_dir => return,
-        EntryType::Dir if !is_dir => return,
-        _ => {}
+    match state.entry_filter {
+        EntryFilter::FileOnly if is_dir => return,
+        EntryFilter::DirOnly if !is_dir => return,
+        EntryFilter::Any | EntryFilter::FileOnly | EntryFilter::DirOnly => {}
     }
 
     let Some(filename) = path.file_name() else { return };
 
-    let cfg = &*state.config;
-
-    if cfg.verbose {
+    if state.verbose {
         verbose_scan(path);
     }
 
-    if cfg.target.is_match(filename) {
+    if state.target.is_match(filename) {
         state.local_found += 1;
-        if cfg.verbose {
+        if state.verbose {
             let s = format!("[MATCH] {}\n", path.display());
             state.out_buf.extend_from_slice(s.as_bytes());
-        } else if cfg.color {
-            append_path_highlight(&mut state.out_buf, path, cfg);
+        } else if state.color {
+            append_path_highlight(&mut state.out_buf, path, &state.config);
         } else {
-            append_path(&mut state.out_buf, path, cfg.null_terminate);
+            append_path(&mut state.out_buf, path, state.null_terminate);
         }
-        flush_out_buf(&mut state.out_buf, cfg);
+        maybe_flush_matches(&mut state.out_buf, state.stdout_block_buffered);
     }
 }
 

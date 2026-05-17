@@ -28,7 +28,7 @@ pub fn should_skip_dir(path: &Path, exclude: &ExcludeList) -> bool {
 /// runtime branch on `config.gitignore`.
 
 /// Workers stream matches to stdout as they are found.
-pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Totals) {
+pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Arc<Totals>) {
     let mut builder = WalkBuilder::new(root);
     builder
         .follow_links(false)
@@ -59,9 +59,8 @@ pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Totals) {
                     let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
 
                     // Skip excluded directories before recursing.
-                
                     if is_dir && should_skip_dir(path, &state.config.exclude) {
-                        if state.config.verbose {
+                        if state.verbose {
                             let _ = eprintln!("[SKIP] {}", path.display());
                         }
                         return WalkState::Skip;
@@ -71,7 +70,7 @@ pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Totals) {
                     WalkState::Continue
                 }
                 Err(e) => {
-                    if state.config.verbose {
+                    if state.verbose {
                         let _ = eprintln!("[ERROR] {}", e);
                     }
                     WalkState::Continue

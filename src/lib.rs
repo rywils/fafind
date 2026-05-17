@@ -7,7 +7,7 @@ mod worker;
 
 use clap::Parser;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 use cli::{Cli, ColorMode};
@@ -94,13 +94,13 @@ pub fn run() {
     });
 
     let start = Instant::now();
-    let totals: Totals = Arc::new(Mutex::new((0u64, 0u64)));
+    let totals = Totals::new();
 
     walk_parallel(&root, Arc::clone(&config), Arc::clone(&totals));
 
     let elapsed = start.elapsed();
     let secs = elapsed.as_secs_f64();
-    let (scanned, found) = *totals.lock().unwrap();
+    let (scanned, found) = totals.snapshot();
 
     let files_per_sec = if secs > 0.0 {
         scanned as f64 / secs

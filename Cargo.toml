@@ -1,6 +1,6 @@
 [package]
 name = "fafind"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2024"
 description = "Fast parallel filesystem search by filename"
 license = "MIT"
@@ -16,6 +16,7 @@ include = [
     "src/**",
     "Cargo.toml",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
 ]
 
