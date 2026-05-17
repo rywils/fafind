@@ -36,4 +36,6 @@ pub struct WalkConfig {
     pub gitignore: bool,
     pub verbose: bool,
     pub color: bool,
+    /// When true, flush stdout after each match (needed when stdout is block-buffered).
+    pub stdout_block_buffered: bool,
 }

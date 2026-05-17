@@ -6,6 +6,9 @@ use crate::matcher::stem_bytes;
 const GREEN: &[u8] = b"\x1b[32m";
 const DIM: &[u8] = b"\x1b[2m";
 const BOLD: &[u8] = b"\x1b[1m";
+const YELLOW: &[u8] = b"\x1b[33m";
+/// Non-match filename segments in substring mode (`-s`).
+const ORANGE: &[u8] = b"\x1b[38;5;208m";
 const RESET: &[u8] = b"\x1b[0m";
 
 #[cfg(unix)]
@@ -60,10 +63,17 @@ pub fn append_path_highlight(buf: &mut Vec<u8>, path: &Path, cfg: &WalkConfig) {
 
         match cfg.match_mode {
             MatchMode::Precise => {
+                let stem_len = stem_bytes(name_bytes).len();
                 buf.extend_from_slice(BOLD);
                 buf.extend_from_slice(GREEN);
-                buf.extend_from_slice(name_bytes);
+                buf.extend_from_slice(&name_bytes[..stem_len]);
                 buf.extend_from_slice(RESET);
+                let ext = &name_bytes[stem_len..];
+                if !ext.is_empty() {
+                    buf.extend_from_slice(YELLOW);
+                    buf.extend_from_slice(ext);
+                    buf.extend_from_slice(RESET);
+                }
             }
             MatchMode::Standard => {
                 let stem_len = stem_bytes(name_bytes).len();
@@ -73,7 +83,7 @@ pub fn append_path_highlight(buf: &mut Vec<u8>, path: &Path, cfg: &WalkConfig) {
 
                 let ext = &name_bytes[stem_len..];
                 if !ext.is_empty() {
-                    buf.extend_from_slice(DIM);
+                    buf.extend_from_slice(YELLOW);
                     buf.extend_from_slice(ext);
                     buf.extend_from_slice(RESET);
                 }
@@ -95,7 +105,7 @@ pub fn append_path_highlight(buf: &mut Vec<u8>, path: &Path, cfg: &WalkConfig) {
                 }
 
                 if !ext.is_empty() {
-                    buf.extend_from_slice(DIM);
+                    buf.extend_from_slice(YELLOW);
                     buf.extend_from_slice(ext);
                     buf.extend_from_slice(RESET);
                 }
@@ -115,18 +125,24 @@ pub fn append_path_highlight(buf: &mut Vec<u8>, path: &Path, cfg: &WalkConfig) {
 #[inline(always)]
 fn highlight_substr_bytes(buf: &mut Vec<u8>, name: &[u8], needle: &[u8]) {
     if needle.is_empty() {
+        buf.extend_from_slice(ORANGE);
         buf.extend_from_slice(name);
+        buf.extend_from_slice(RESET);
         return;
     }
 
     let mut i = 0usize;
     while i <= name.len() {
         let Some(rel) = memchr::memmem::find(&name[i..], needle) else {
+            buf.extend_from_slice(ORANGE);
             buf.extend_from_slice(&name[i..]);
+            buf.extend_from_slice(RESET);
             return;
         };
         let at = i + rel;
+        buf.extend_from_slice(ORANGE);
         buf.extend_from_slice(&name[i..at]);
+        buf.extend_from_slice(RESET);
         buf.extend_from_slice(GREEN);
         buf.extend_from_slice(&name[at..at + needle.len()]);
         buf.extend_from_slice(RESET);
@@ -137,7 +153,9 @@ fn highlight_substr_bytes(buf: &mut Vec<u8>, name: &[u8], needle: &[u8]) {
 #[inline(always)]
 fn highlight_substr_ascii_ignore_case(buf: &mut Vec<u8>, name: &[u8], needle_lower: &[u8]) {
     if needle_lower.is_empty() {
+        buf.extend_from_slice(ORANGE);
         buf.extend_from_slice(name);
+        buf.extend_from_slice(RESET);
         return;
     }
 
@@ -155,7 +173,9 @@ fn highlight_substr_ascii_ignore_case(buf: &mut Vec<u8>, name: &[u8], needle_low
         }
 
         if j == n {
+            buf.extend_from_slice(ORANGE);
             buf.extend_from_slice(&name[last..i]);
+            buf.extend_from_slice(RESET);
             buf.extend_from_slice(GREEN);
             buf.extend_from_slice(&name[i..i + n]);
             buf.extend_from_slice(RESET);
@@ -166,5 +186,7 @@ fn highlight_substr_ascii_ignore_case(buf: &mut Vec<u8>, name: &[u8], needle_low
         }
     }
 
+    buf.extend_from_slice(ORANGE);
     buf.extend_from_slice(&name[last..]);
+    buf.extend_from_slice(RESET);
 }

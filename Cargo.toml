@@ -26,6 +26,10 @@ ignore = "0.4"
 memchr = "2.7"
 smallvec = { version = "1.13", features = ["union"] }
 
+[[bin]]
+name = "faf"
+path = "src/bin/faf.rs"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

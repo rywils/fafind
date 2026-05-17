@@ -4,7 +4,6 @@ use std::sync::Arc;
 use ignore::WalkBuilder;
 
 use crate::config::{ExcludeList, WalkConfig};
-use crate::output::OutputSlots;
 use crate::worker::{process_entry, Totals, WorkerState};
 
 /// Returns true if this directory should be skipped.
@@ -28,13 +27,8 @@ pub fn should_skip_dir(path: &Path, exclude: &ExcludeList) -> bool {
 /// dropping jwalk. The benefit is one code path, one dependency, and no
 /// runtime branch on `config.gitignore`.
 
-/// Workers write matches directly to thread-local BufWriters 
-pub fn walk_parallel(
-    root: &Path,
-    config: Arc<WalkConfig>,
-    slots: Arc<OutputSlots>,
-    totals: Totals,
-) {
+/// Workers stream matches to stdout as they are found.
+pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Totals) {
     let mut builder = WalkBuilder::new(root);
     builder
         .follow_links(false)
@@ -52,11 +46,7 @@ pub fn walk_parallel(
     let walker = builder.build_parallel();
 
     walker.run(|| {
-        let mut state = WorkerState::new(
-            Arc::clone(&config),
-            Arc::clone(&slots),
-            Arc::clone(&totals),
-        );
+        let mut state = WorkerState::new(Arc::clone(&config), Arc::clone(&totals));
 
         Box::new(move |entry| {
             use ignore::WalkState;

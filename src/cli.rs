@@ -2,19 +2,19 @@ use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
 const AFTER_HELP: &str = r#"Matching modes (default: stem — strips extension, exact stem match):
-  fafind main .            stem: finds main.rs, main.go — not domain.rs
-  fafind -s foo /home      substr: finds foobar, foo.txt, prefoo
-  fafind -p Makefile /etc  exact: full filename must match literally
+  faf main .               stem: finds main.rs, main.go — not domain.rs
+  faf -s foo /home         substr: finds foobar, foo.txt, prefoo
+  faf -p Makefile /etc     exact: full filename must match literally
 
 Other examples:
-  fafind -i README .       case-insensitive stem match
-  fafind --max-depth 3 main .
-  fafind --exclude target,node_modules main .
-  fafind --gitignore src .
+  faf -i README .          case-insensitive stem match
+  faf --max-depth 3 main .
+  faf --exclude target,node_modules main .
+  faf --gitignore src .
 "#;
 
 #[derive(Parser, Debug)]
-#[command(name = "fafind")]
+#[command(name = "faf", visible_alias = "fafind")]
 #[command(version)]
 #[command(about = "Fast filesystem search by filename")]
 #[command(after_help = AFTER_HELP)]
