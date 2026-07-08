@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 const AFTER_HELP: &str = r#"Matching modes (default: stem — strips extension, exact stem match):
   faf main .               stem: finds main.rs, main.go — not domain.rs
+  faf main.rs .            same as faf main (extension on query is ignored)
   faf -s foo /home         substr: finds foobar, foo.txt, prefoo
   faf -p Makefile /etc     exact: full filename must match literally
 

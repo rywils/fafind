@@ -33,12 +33,20 @@ pub struct MatchTarget {
 
 impl MatchTarget {
     pub fn new(raw: &str, mode: MatchMode, ignore_case: bool) -> Self {
-        let canonical: Arc<[u8]> = if ignore_case {
-            raw.to_ascii_lowercase().into_bytes().into()
+        // Stem mode strips extensions from filenames; apply the same rule to the query
+        // so `faf walker.rs` matches `walker.rs` the same as `faf walker`.
+        let effective = if mode == MatchMode::Standard {
+            std::str::from_utf8(stem_bytes(raw.as_bytes())).unwrap_or(raw)
         } else {
-            raw.as_bytes().into()
+            raw
         };
-        let target_is_ascii = raw.is_ascii();
+
+        let canonical: Arc<[u8]> = if ignore_case {
+            effective.to_ascii_lowercase().into_bytes().into()
+        } else {
+            effective.as_bytes().into()
+        };
+        let target_is_ascii = effective.is_ascii();
         let canonical_len = canonical.len();
         let short_needle = canonical_len <= SHORT_NEEDLE_THRESHOLD;
         Self { canonical, canonical_len, mode, ignore_case, target_is_ascii, short_needle }
@@ -274,4 +282,36 @@ pub fn stem_bytes(bytes: &[u8]) -> &[u8] {
         }
     }
     bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    fn matches(mode: MatchMode, target: &str, filename: &str) -> bool {
+        MatchTarget::new(target, mode, false).is_match(OsStr::new(filename))
+    }
+
+    #[test]
+    fn standard_stem_query_with_extension_matches_stem() {
+        assert!(matches(MatchMode::Standard, "walker.rs", "walker.rs"));
+        assert!(matches(MatchMode::Standard, "walker.rs", "walker.go"));
+        assert!(!matches(MatchMode::Standard, "walker.rs", "mywalker.rs"));
+    }
+
+    #[test]
+    fn standard_stem_query_without_extension_same_as_with() {
+        assert_eq!(
+            matches(MatchMode::Standard, "walker", "walker.rs"),
+            matches(MatchMode::Standard, "walker.rs", "walker.rs"),
+        );
+    }
+
+    #[test]
+    fn precise_requires_full_filename() {
+        assert!(matches(MatchMode::Precise, "walker.rs", "walker.rs"));
+        assert!(!matches(MatchMode::Precise, "walker", "walker.rs"));
+        assert!(!matches(MatchMode::Precise, "walker.rs", "walker.go"));
+    }
 }
