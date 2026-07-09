@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::config::{EntryType, WalkConfig};
 use crate::matcher::MatchTarget;
