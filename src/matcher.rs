@@ -15,8 +15,6 @@ const FILENAME_BUF_LEN: usize = 768;
 const SHORT_NEEDLE_THRESHOLD: usize = 4;
 
 // MatchTarget
-/// Holds the pre-processed target for matching.
-/// Constructed once; shared read-only across all worker threads
 #[derive(Clone)]
 pub struct MatchTarget {
     canonical: Arc<[u8]>,
@@ -32,8 +30,6 @@ pub struct MatchTarget {
 
 impl MatchTarget {
     pub fn new(raw: &str, mode: MatchMode, ignore_case: bool) -> Self {
-        // Stem mode strips extensions from filenames; apply the same rule to the query
-        // so `faf walker.rs` matches `walker.rs` the same as `faf walker`.
         let effective = if mode == MatchMode::Standard {
             std::str::from_utf8(stem_bytes(raw.as_bytes())).unwrap_or(raw)
         } else {
@@ -59,22 +55,6 @@ impl MatchTarget {
     }
 
     /// Hot path returns true if `filename` matches this target.
-    ///
-    /// ASCII fast-path (covers >95% of real-world filenames):
-    ///   - Detects ASCII-only filenames with a SIMD-friendly all-< 128 check.
-    ///   - Performs case folding inline with `to_ascii_lowercase()` on a
-    ///     stack-allocated copy — zero heap allocation.
-    ///
-    /// Unicode fallback:
-    ///   - Only triggered when a byte ≥ 128 is present in the filename.
-    ///   - Falls back to `to_lowercase()` which may allocate, but this is the
-    ///     rare case.
-    ///
-    /// Single pass per entry, no redundant work: the length prefilter and
-    /// the mode-specific matcher used to each call `stem_bytes`
-    /// independently in `Standard` mode, scanning the filename backwards
-    /// twice per entry. Computing the stem once here and passing it through
-    /// avoids that duplicate scan on the tool's default mode.
     #[inline(always)]
     pub fn is_match(&self, bytes: &[u8]) -> bool {
         match self.mode {
@@ -122,9 +102,6 @@ impl MatchTarget {
             return memchr::memmem::find(bytes, &self.canonical).is_some();
         }
         if self.target_is_ascii {
-            // ASCII/Unicode decision made ONCE here
-            // bytes.is_ascii() is a tight all-< 128 scan the compiler
-            // auto-vectorizes; it runs once and gates the entire hot path.
             if bytes.is_ascii() {
                 if self.short_needle {
                     ascii_substr_short(bytes, &self.canonical)
@@ -156,9 +133,6 @@ impl MatchTarget {
 }
 
 // Case-folding helpers
-// Single-pass ASCII case-insensitive equality.
-// One loop. Non-ASCII detection + lowercased compare simultaneously.
-// No separate is_ascii() pre-scan.
 #[inline(always)]
 fn ascii_eq_ignore_case_single_pass(bytes: &[u8], canonical: &[u8]) -> bool {
     let n = bytes.len();
@@ -177,8 +151,6 @@ fn ascii_eq_ignore_case_single_pass(bytes: &[u8], canonical: &[u8]) -> bool {
 }
 
 // Short-needle ASCII case-insensitive substring search.
-// PRECONDITION: caller has confirmed haystack.is_ascii() == true.
-// No >= 128 checks inside — the hot loops are branch-free straight-line
 // compares: only the window-advance test and one equality chain per position.
 
 #[inline(always)]
@@ -244,11 +216,6 @@ fn ascii_substr_short(haystack: &[u8], needle: &[u8]) -> bool {
     false
 }
 
-/// ASCII case-insensitive substring search using a stack buffer + memmem.
-/// PRECONDITION: caller has confirmed haystack.is_ascii() == true.
-/// No >= 128 guard inside the fill loop — pure lowercase + copy,
-/// no branches other than the loop counter. memmem then runs SIMD over
-/// the contiguous lowercased buffer.
 #[inline(always)]
 fn ascii_contains_ignore_case(haystack: &[u8], needle: &[u8]) -> bool {
     if haystack.len() <= FILENAME_BUF_LEN {
@@ -285,8 +252,6 @@ fn unicode_contains_ignore_case(bytes: &[u8], needle_lower: &[u8]) -> bool {
 }
 
 /// Extract the file stem as a byte slice from raw filename bytes.
-/// Equivalent to Path::file_stem() but zero-allocation.
-/// Manual reverse scan replaces iterator state machine from rposition.
 #[inline(always)]
 pub fn stem_bytes(bytes: &[u8]) -> &[u8] {
     let n = bytes.len();

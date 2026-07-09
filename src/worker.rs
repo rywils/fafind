@@ -11,10 +11,8 @@ use crate::util::{append_path, append_path_highlight};
 use crate::util::entry_file_name_bytes;
 
 pub const WORKER_BUF_CAP: usize = 256 * 1024; // 256 KB initial capacity per worker
-/// Batch match output before taking the stdout lock (TTY / non-piped runs).
 const STREAM_BATCH_THRESHOLD: usize = 64 * 1024;
 
-/// Shared scan counters; workers accumulate locally and publish once on drop.
 pub struct Totals {
     scanned: AtomicU64,
     found: AtomicU64,
@@ -43,7 +41,7 @@ enum EntryFilter {
     DirOnly,
 }
 
-/// Worker state: entirely private per-thread.
+/// Worker state
 pub struct WorkerState {
     target: MatchTarget,
     entry_filter: EntryFilter,
@@ -166,7 +164,7 @@ pub fn process_entry(path: &Path, is_dir: bool, is_root: bool, state: &mut Worke
     }
 }
 
-/// Verbose scan log — cold path, out-of-line to keep process_entry tight.
+/// Verbose scan log 
 #[cold]
 #[inline(never)]
 pub fn verbose_scan(path: &Path) {

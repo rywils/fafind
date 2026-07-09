@@ -23,9 +23,6 @@ pub fn should_skip_dir(path: &Path, exclude: &ExcludeList) -> bool {
 
 /// Single unified parallel walker using ignore::WalkBuilder.
 /// ignore::WalkBuilder::build_parallel() uses a work-stealing thread pool
-/// internally (same as jwalk), so there is no throughput regression from
-/// dropping jwalk. The benefit is one code path, one dependency, and no
-/// runtime branch on `config.gitignore`.
 
 /// Workers stream matches to stdout as they are found.
 pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Arc<Totals>) {
