@@ -229,6 +229,11 @@ faf -i --exclude target,node_modules --max-depth 5 main .
 - no heap usage per file
 - stack buffers for ASCII matching
 - fallback only when necessary
+- raw reverse-byte scan for filename extraction on non-root entries,
+  bypassing `Path::file_name()`'s `Components` parsing (the walk root still
+  uses the general path, since it may be `.`, `/`, or user-supplied)
+- filename stem computed once per entry in default (stem) match mode,
+  shared between the length prefilter and the equality check
 
 ### parallel by default
 
