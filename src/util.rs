@@ -14,6 +14,23 @@ const RESET: &[u8] = b"\x1b[0m";
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
+/// Fast filename extraction for non-root walk entries.
+///
+/// Bypasses `Path::file_name()` (which builds a `Components` iterator to
+/// handle `.`/`..`/prefix/trailing-slash normalization) with a raw reverse
+/// byte scan. Safe here because entry names come straight from `readdir`
+/// and are never `.`, `..`, or slash-terminated - that generality is only
+/// needed for the walk root itself, which callers must handle separately.
+#[cfg(unix)]
+#[inline(always)]
+pub fn entry_file_name_bytes(path: &Path) -> &[u8] {
+    let full = path.as_os_str().as_bytes();
+    match memchr::memrchr(b'/', full) {
+        Some(i) => &full[i + 1..],
+        None => full,
+    }
+}
+
 /// Append a matched path to a raw byte buffer.
 ///
 /// On Unix: appends the raw OS bytes via OsStrExt::as_bytes() — no UTF-8

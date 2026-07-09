@@ -66,7 +66,7 @@ pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Arc<Totals>) 
                         return WalkState::Skip;
                     }
 
-                    process_entry(path, is_dir, &mut state);
+                    process_entry(path, is_dir, e.depth() == 0, &mut state);
                     WalkState::Continue
                 }
                 Err(e) => {
