@@ -4,7 +4,7 @@ use std::sync::Arc;
 use ignore::WalkBuilder;
 
 use crate::config::{ExcludeList, WalkConfig};
-use crate::worker::{process_entry, Totals, WorkerState};
+use crate::worker::{Totals, WorkerState, process_entry};
 
 /// Returns true if this directory should be skipped.
 /// Linear scan over SmallVec — faster than HashSet for n ≤ ~16.
@@ -33,8 +33,8 @@ pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Arc<Totals>) 
     builder
         .follow_links(false)
         .hidden(false)
-        .parents(false)       // don't read .ignore/.gitignore from parent dirs
-        .ignore(false)        // don't read .ignore files
+        .parents(false) // don't read .ignore/.gitignore from parent dirs
+        .ignore(false) // don't read .ignore files
         .git_ignore(config.gitignore)
         .git_global(config.gitignore)
         .git_exclude(config.gitignore);
@@ -66,7 +66,7 @@ pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Arc<Totals>) 
                         return WalkState::Skip;
                     }
 
-                    process_entry(path, is_dir, &mut state);
+                    process_entry(path, is_dir, e.depth() == 0, &mut state);
                     WalkState::Continue
                 }
                 Err(e) => {

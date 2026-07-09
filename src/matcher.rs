@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 use std::sync::Arc;
 
 use crate::config::MatchMode;
@@ -12,7 +11,7 @@ const FILENAME_BUF_LEN: usize = 256; // NAME_MAX (255) + 1
 #[cfg(not(unix))]
 const FILENAME_BUF_LEN: usize = 768;
 
-// Needle length threshold 
+// Needle length threshold
 const SHORT_NEEDLE_THRESHOLD: usize = 4;
 
 // MatchTarget
@@ -49,42 +48,55 @@ impl MatchTarget {
         let target_is_ascii = effective.is_ascii();
         let canonical_len = canonical.len();
         let short_needle = canonical_len <= SHORT_NEEDLE_THRESHOLD;
-        Self { canonical, canonical_len, mode, ignore_case, target_is_ascii, short_needle }
+        Self {
+            canonical,
+            canonical_len,
+            mode,
+            ignore_case,
+            target_is_ascii,
+            short_needle,
+        }
     }
 
     /// Hot path returns true if `filename` matches this target.
-   
+    ///
     /// ASCII fast-path (covers >95% of real-world filenames):
     ///   - Detects ASCII-only filenames with a SIMD-friendly all-< 128 check.
     ///   - Performs case folding inline with `to_ascii_lowercase()` on a
     ///     stack-allocated copy — zero heap allocation.
-   
+    ///
     /// Unicode fallback:
     ///   - Only triggered when a byte ≥ 128 is present in the filename.
     ///   - Falls back to `to_lowercase()` which may allocate, but this is the
-    ///     rare case
-    /// Cheap rejection before the full matcher runs.
+    ///     rare case.
+    ///
+    /// Single pass per entry, no redundant work: the length prefilter and
+    /// the mode-specific matcher used to each call `stem_bytes`
+    /// independently in `Standard` mode, scanning the filename backwards
+    /// twice per entry. Computing the stem once here and passing it through
+    /// avoids that duplicate scan on the tool's default mode.
     #[inline(always)]
-    pub fn might_match(&self, bytes: &[u8]) -> bool {
-        let len = bytes.len();
+    pub fn is_match(&self, bytes: &[u8]) -> bool {
         match self.mode {
-            MatchMode::Precise => len == self.canonical_len,
-            MatchMode::Standard => stem_bytes(bytes).len() == self.canonical_len,
-            MatchMode::Substr => len >= self.canonical_len,
-        }
-    }
-
-    #[inline(always)]
-    pub fn is_match(&self, filename: &OsStr) -> bool {
-        let bytes = filename.as_encoded_bytes();
-        if !self.might_match(bytes) {
-            return false;
-        }
-
-        match self.mode {
-            MatchMode::Precise => self.match_precise(bytes),
-            MatchMode::Substr => self.match_substr(bytes),
-            MatchMode::Standard => self.match_standard(bytes),
+            MatchMode::Precise => {
+                if bytes.len() != self.canonical_len {
+                    return false;
+                }
+                self.match_precise(bytes)
+            }
+            MatchMode::Substr => {
+                if bytes.len() < self.canonical_len {
+                    return false;
+                }
+                self.match_substr(bytes)
+            }
+            MatchMode::Standard => {
+                let stem = stem_bytes(bytes);
+                if stem.len() != self.canonical_len {
+                    return false;
+                }
+                self.match_standard(stem)
+            }
         }
     }
 
@@ -127,14 +139,13 @@ impl MatchTarget {
         }
     }
 
+    /// `stem` is the filename stem already extracted by the caller
+    /// (`is_match`) - the length check against `canonical_len` already
+    /// happened there, so this only does the byte comparison.
     #[inline(always)]
-    fn match_standard(&self, bytes: &[u8]) -> bool {
-        let stem = stem_bytes(bytes);
+    fn match_standard(&self, stem: &[u8]) -> bool {
         if !self.ignore_case {
             return stem == self.canonical.as_ref();
-        }
-        if stem.len() != self.canonical_len {
-            return false;
         }
         if self.target_is_ascii {
             ascii_eq_ignore_case_single_pass(stem, &self.canonical)
@@ -150,7 +161,7 @@ impl MatchTarget {
 // No separate is_ascii() pre-scan.
 #[inline(always)]
 fn ascii_eq_ignore_case_single_pass(bytes: &[u8], canonical: &[u8]) -> bool {
-    let n = bytes.len(); 
+    let n = bytes.len();
     let mut i = 0usize;
     while i < n {
         let a = bytes[i];
@@ -183,7 +194,9 @@ fn ascii_substr_short(haystack: &[u8], needle: &[u8]) -> bool {
             let n0 = needle[0];
             let mut i = 0usize;
             while i <= limit {
-                if haystack[i].to_ascii_lowercase() == n0 { return true; }
+                if haystack[i].to_ascii_lowercase() == n0 {
+                    return true;
+                }
                 i += 1;
             }
         }
@@ -226,7 +239,7 @@ fn ascii_substr_short(haystack: &[u8], needle: &[u8]) -> bool {
                 i += 1;
             }
         }
-        _ => return true, 
+        _ => return true,
     }
     false
 }
@@ -255,14 +268,18 @@ fn ascii_contains_ignore_case(haystack: &[u8], needle: &[u8]) -> bool {
 /// Unicode case-insensitive equality check (cold path).
 #[cold]
 fn unicode_eq_ignore_case(bytes: &[u8], canonical_lower: &[u8]) -> bool {
-    let Ok(s) = std::str::from_utf8(bytes) else { return false };
+    let Ok(s) = std::str::from_utf8(bytes) else {
+        return false;
+    };
     s.to_lowercase().as_bytes() == canonical_lower
 }
 
 /// Unicode case-insensitive substring search (cold path).
 #[cold]
 fn unicode_contains_ignore_case(bytes: &[u8], needle_lower: &[u8]) -> bool {
-    let Ok(s) = std::str::from_utf8(bytes) else { return false };
+    let Ok(s) = std::str::from_utf8(bytes) else {
+        return false;
+    };
     let lower = s.to_lowercase();
     memchr::memmem::find(lower.as_bytes(), needle_lower).is_some()
 }
@@ -273,9 +290,12 @@ fn unicode_contains_ignore_case(bytes: &[u8], needle_lower: &[u8]) -> bool {
 #[inline(always)]
 pub fn stem_bytes(bytes: &[u8]) -> &[u8] {
     let n = bytes.len();
-    if n == 0 { return bytes; }
+    if n == 0 {
+        return bytes;
+    }
     let mut i = n;
-    while i > 1 { // stop at 1: dot at index 0 = hidden file, stem = whole name
+    while i > 1 {
+        // stop at 1: dot at index 0 = hidden file, stem = whole name
         i -= 1;
         if bytes[i] == b'.' {
             return &bytes[..i];
@@ -287,10 +307,9 @@ pub fn stem_bytes(bytes: &[u8]) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsStr;
 
     fn matches(mode: MatchMode, target: &str, filename: &str) -> bool {
-        MatchTarget::new(target, mode, false).is_match(OsStr::new(filename))
+        MatchTarget::new(target, mode, false).is_match(filename.as_bytes())
     }
 
     #[test]

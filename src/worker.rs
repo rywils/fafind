@@ -1,11 +1,14 @@
 use std::io::Write;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::config::{EntryType, WalkConfig};
 use crate::matcher::MatchTarget;
 use crate::util::{append_path, append_path_highlight};
+
+#[cfg(unix)]
+use crate::util::entry_file_name_bytes;
 
 pub const WORKER_BUF_CAP: usize = 256 * 1024; // 256 KB initial capacity per worker
 /// Batch match output before taking the stdout lock (TTY / non-piped runs).
@@ -112,8 +115,14 @@ fn maybe_flush_matches(out_buf: &mut Vec<u8>, stdout_block_buffered: bool) {
 }
 
 /// Hot path: called for every filesystem entry.
+///
+/// `is_root` marks the walk's starting entry (depth 0), whose path comes
+/// from the user (may be `.`, `/`, or end in `/`) and needs the general
+/// `Path::file_name()` parsing. Every other entry's name comes straight
+/// from `readdir` and is never `.`, `..`, or slash-terminated, so it can
+/// use the raw byte scan below instead of building a `Components` iterator.
 #[inline(always)]
-pub fn process_entry(path: &Path, is_dir: bool, state: &mut WorkerState) {
+pub fn process_entry(path: &Path, is_dir: bool, is_root: bool, state: &mut WorkerState) {
     state.local_scanned += 1;
 
     match state.entry_filter {
@@ -122,7 +131,22 @@ pub fn process_entry(path: &Path, is_dir: bool, state: &mut WorkerState) {
         EntryFilter::Any | EntryFilter::FileOnly | EntryFilter::DirOnly => {}
     }
 
-    let Some(filename) = path.file_name() else { return };
+    #[cfg(unix)]
+    let filename: &[u8] = if is_root {
+        let Some(f) = path.file_name() else { return };
+        f.as_encoded_bytes()
+    } else {
+        let f = entry_file_name_bytes(path);
+        if f.is_empty() {
+            return;
+        }
+        f
+    };
+    #[cfg(not(unix))]
+    let filename: &[u8] = {
+        let Some(f) = path.file_name() else { return };
+        f.as_encoded_bytes()
+    };
 
     if state.verbose {
         verbose_scan(path);

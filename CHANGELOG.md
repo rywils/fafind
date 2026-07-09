@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Performance** — further hot-path trimming without changing match semantics:
+  - Raw reverse-byte scan for filename extraction on non-root entries, bypassing `Path::file_name()`'s `Components` parsing
+  - Filename stem computed once per entry in default (stem) match mode, shared between the length prefilter and the equality check
+
 ## [1.1.0] - 2026-05-16
 
 ### Added
