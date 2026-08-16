@@ -70,17 +70,8 @@ pub fn run() {
             ColorMode::Auto => stdout_is_tty,
         };
 
-    let target_raw: Arc<str> = cli.target.clone().into();
-    let target_canonical: Arc<[u8]> = if cli.ignore_case {
-        cli.target.to_ascii_lowercase().into_bytes().into()
-    } else {
-        cli.target.as_bytes().to_vec().into_boxed_slice().into()
-    };
-
     let config = Arc::new(WalkConfig {
         target: MatchTarget::new(&cli.target, mode, cli.ignore_case),
-        target_raw,
-        target_canonical,
         match_mode: mode,
         ignore_case: cli.ignore_case,
         max_depth: cli.max_depth,

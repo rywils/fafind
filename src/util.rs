@@ -114,7 +114,7 @@ pub fn append_path_highlight(buf: &mut Vec<u8>, path: &Path, cfg: &WalkConfig) {
                 let ext = &name_bytes[stem_len..];
 
                 if cfg.ignore_case {
-                    if !name_bytes.is_ascii() || !cfg.target_canonical.is_ascii() {
+                    if !name_bytes.is_ascii() || !cfg.target.is_ascii_target() {
                         buf.extend_from_slice(name_bytes);
                         buf.push(b'\n');
                         return;
@@ -122,10 +122,10 @@ pub fn append_path_highlight(buf: &mut Vec<u8>, path: &Path, cfg: &WalkConfig) {
                     highlight_substr_ascii_ignore_case(
                         buf,
                         &name_bytes[..stem_len],
-                        &cfg.target_canonical,
+                        cfg.target.canonical_bytes(),
                     );
                 } else {
-                    let needle = cfg.target_raw.as_bytes();
+                    let needle = cfg.target.canonical_bytes();
                     highlight_substr_bytes(buf, &name_bytes[..stem_len], needle);
                 }
 
@@ -138,7 +138,6 @@ pub fn append_path_highlight(buf: &mut Vec<u8>, path: &Path, cfg: &WalkConfig) {
         }
 
         buf.push(b'\n');
-        return;
     }
 
     #[cfg(not(unix))]

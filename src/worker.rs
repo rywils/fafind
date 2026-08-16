@@ -168,5 +168,5 @@ pub fn process_entry(path: &Path, is_dir: bool, is_root: bool, state: &mut Worke
 #[cold]
 #[inline(never)]
 pub fn verbose_scan(path: &Path) {
-    let _ = eprintln!("[SCAN] {}", path.display());
+    eprintln!("[SCAN] {}", path.display());
 }
