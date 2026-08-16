@@ -22,8 +22,7 @@ pub fn should_skip_dir(path: &Path, exclude: &ExcludeList) -> bool {
 }
 
 /// Single unified parallel walker using ignore::WalkBuilder.
-/// ignore::WalkBuilder::build_parallel() uses a work-stealing thread pool
-
+/// ignore::WalkBuilder::build_parallel() uses a work-stealing thread pool.
 /// Workers stream matches to stdout as they are found.
 pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Arc<Totals>) {
     let mut builder = WalkBuilder::new(root);
@@ -58,7 +57,7 @@ pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Arc<Totals>) 
                     // Skip excluded directories before recursing.
                     if is_dir && should_skip_dir(path, &state.config.exclude) {
                         if state.verbose {
-                            let _ = eprintln!("[SKIP] {}", path.display());
+                            eprintln!("[SKIP] {}", path.display());
                         }
                         return WalkState::Skip;
                     }
@@ -68,7 +67,7 @@ pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Arc<Totals>) 
                 }
                 Err(e) => {
                     if state.verbose {
-                        let _ = eprintln!("[ERROR] {}", e);
+                        eprintln!("[ERROR] {}", e);
                     }
                     WalkState::Continue
                 }

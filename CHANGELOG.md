@@ -9,6 +9,8 @@ All notable changes to this project are documented in this file.
 - **Performance** — further hot-path trimming without changing match semantics:
   - Raw reverse-byte scan for filename extraction on non-root entries, bypassing `Path::file_name()`'s `Components` parsing
   - Filename stem computed once per entry in default (stem) match mode, shared between the length prefilter and the equality check
+  - Substring color-highlight path now reads `MatchTarget`'s cached bytes/ASCII flag instead of rescanning the query string per match
+- Removed duplicate query-string storage (`WalkConfig::target_raw`/`target_canonical`) — `MatchTarget` already held the same bytes for substring matching
 
 ## [1.1.0] - 2026-05-16
 

@@ -24,8 +24,6 @@ pub type ExcludeList = SmallVec<[Box<[u8]>; 8]>;
 
 pub struct WalkConfig {
     pub target: MatchTarget,
-    pub target_raw: Arc<str>,
-    pub target_canonical: Arc<[u8]>,
     pub match_mode: MatchMode,
     pub ignore_case: bool,
     pub max_depth: Option<usize>,

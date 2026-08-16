@@ -54,6 +54,18 @@ impl MatchTarget {
         }
     }
 
+    /// The case/stem-normalized query bytes used for matching.
+    #[inline(always)]
+    pub fn canonical_bytes(&self) -> &[u8] {
+        &self.canonical
+    }
+
+    /// True if the query is ASCII-only (cached at construction).
+    #[inline(always)]
+    pub fn is_ascii_target(&self) -> bool {
+        self.target_is_ascii
+    }
+
     /// Hot path returns true if `filename` matches this target.
     #[inline(always)]
     pub fn is_match(&self, bytes: &[u8]) -> bool {
