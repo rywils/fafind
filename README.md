@@ -6,6 +6,10 @@
 
 It’s built to rip through millions of files with minimal overhead.
 
+--- 
+
+** Download [delfaf](https://github.com/rywils/delfaf) to mass-delete matched items that fafind locates with a single command. ** 
+
 ---
 
 ## why this exists
