@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::config::{EntryType, WalkConfig};
 use crate::matcher::MatchTarget;
@@ -54,10 +54,16 @@ pub struct WorkerState {
     local_found: u64,
     out_buf: Vec<u8>,
     totals: Arc<Totals>,
+    cache_buf: Vec<u8>,
+    cache_sink: Option<Arc<Mutex<Vec<u8>>>>,
 }
 
 impl WorkerState {
-    pub fn new(config: Arc<WalkConfig>, totals: Arc<Totals>) -> Self {
+    pub fn new(
+        config: Arc<WalkConfig>,
+        totals: Arc<Totals>,
+        cache_sink: Option<Arc<Mutex<Vec<u8>>>>,
+    ) -> Self {
         let entry_filter = match config.entry_type {
             EntryType::File => EntryFilter::FileOnly,
             EntryType::Dir => EntryFilter::DirOnly,
@@ -75,6 +81,8 @@ impl WorkerState {
             local_found: 0,
             out_buf: Vec::with_capacity(WORKER_BUF_CAP),
             totals,
+            cache_buf: Vec::new(),
+            cache_sink,
         }
     }
 }
@@ -82,6 +90,11 @@ impl WorkerState {
 impl Drop for WorkerState {
     fn drop(&mut self) {
         flush_out_buf(&mut self.out_buf, self.stdout_block_buffered);
+        if let Some(sink) = &self.cache_sink
+            && !self.cache_buf.is_empty()
+        {
+            sink.lock().unwrap().extend_from_slice(&self.cache_buf);
+        }
         self.totals
             .scanned
             .fetch_add(self.local_scanned, Ordering::Relaxed);
@@ -152,6 +165,9 @@ pub fn process_entry(path: &Path, is_dir: bool, is_root: bool, state: &mut Worke
 
     if state.target.is_match(filename) {
         state.local_found += 1;
+        if state.cache_sink.is_some() {
+            append_path(&mut state.cache_buf, path, true);
+        }
         if state.verbose {
             let s = format!("[MATCH] {}\n", path.display());
             state.out_buf.extend_from_slice(s.as_bytes());
