@@ -1,8 +1,9 @@
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use ignore::WalkBuilder;
 
+use crate::CacheWriter;
 use crate::config::{ExcludeList, WalkConfig};
 use crate::worker::{Totals, WorkerState, process_entry};
 
@@ -28,7 +29,7 @@ pub fn walk_parallel(
     root: &Path,
     config: Arc<WalkConfig>,
     totals: Arc<Totals>,
-    cache_sink: Option<Arc<Mutex<Vec<u8>>>>,
+    cache_writer: Option<Arc<CacheWriter>>,
 ) {
     let mut builder = WalkBuilder::new(root);
     builder
@@ -50,7 +51,7 @@ pub fn walk_parallel(
         let mut state = WorkerState::new(
             Arc::clone(&config),
             Arc::clone(&totals),
-            cache_sink.clone(),
+            cache_writer.clone(),
         );
 
         Box::new(move |entry| {

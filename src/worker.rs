@@ -1,8 +1,9 @@
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 
+use crate::CacheWriter;
 use crate::config::{EntryType, WalkConfig};
 use crate::matcher::MatchTarget;
 use crate::util::{append_path, append_path_highlight};
@@ -55,14 +56,14 @@ pub struct WorkerState {
     out_buf: Vec<u8>,
     totals: Arc<Totals>,
     cache_buf: Vec<u8>,
-    cache_sink: Option<Arc<Mutex<Vec<u8>>>>,
+    cache_writer: Option<Arc<CacheWriter>>,
 }
 
 impl WorkerState {
     pub fn new(
         config: Arc<WalkConfig>,
         totals: Arc<Totals>,
-        cache_sink: Option<Arc<Mutex<Vec<u8>>>>,
+        cache_writer: Option<Arc<CacheWriter>>,
     ) -> Self {
         let entry_filter = match config.entry_type {
             EntryType::File => EntryFilter::FileOnly,
@@ -82,7 +83,7 @@ impl WorkerState {
             out_buf: Vec::with_capacity(WORKER_BUF_CAP),
             totals,
             cache_buf: Vec::new(),
-            cache_sink,
+            cache_writer,
         }
     }
 }
@@ -90,10 +91,10 @@ impl WorkerState {
 impl Drop for WorkerState {
     fn drop(&mut self) {
         flush_out_buf(&mut self.out_buf, self.stdout_block_buffered);
-        if let Some(sink) = &self.cache_sink
+        if let Some(writer) = &self.cache_writer
             && !self.cache_buf.is_empty()
         {
-            sink.lock().unwrap().extend_from_slice(&self.cache_buf);
+            writer.write(&self.cache_buf);
         }
         self.totals
             .scanned
@@ -165,8 +166,12 @@ pub fn process_entry(path: &Path, is_dir: bool, is_root: bool, state: &mut Worke
 
     if state.target.is_match(filename) {
         state.local_found += 1;
-        if state.cache_sink.is_some() {
+        if let Some(writer) = &state.cache_writer {
             append_path(&mut state.cache_buf, path, true);
+            if state.cache_buf.len() >= STREAM_BATCH_THRESHOLD {
+                writer.write(&state.cache_buf);
+                state.cache_buf.clear();
+            }
         }
         if state.verbose {
             let s = format!("[MATCH] {}\n", path.display());
