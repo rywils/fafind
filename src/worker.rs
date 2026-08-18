@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::CacheWriter;
 use crate::config::{EntryType, WalkConfig};
 use crate::matcher::MatchTarget;
 use crate::util::{append_path, append_path_highlight};
@@ -54,10 +55,16 @@ pub struct WorkerState {
     local_found: u64,
     out_buf: Vec<u8>,
     totals: Arc<Totals>,
+    cache_buf: Vec<u8>,
+    cache_writer: Option<Arc<CacheWriter>>,
 }
 
 impl WorkerState {
-    pub fn new(config: Arc<WalkConfig>, totals: Arc<Totals>) -> Self {
+    pub fn new(
+        config: Arc<WalkConfig>,
+        totals: Arc<Totals>,
+        cache_writer: Option<Arc<CacheWriter>>,
+    ) -> Self {
         let entry_filter = match config.entry_type {
             EntryType::File => EntryFilter::FileOnly,
             EntryType::Dir => EntryFilter::DirOnly,
@@ -75,6 +82,8 @@ impl WorkerState {
             local_found: 0,
             out_buf: Vec::with_capacity(WORKER_BUF_CAP),
             totals,
+            cache_buf: Vec::new(),
+            cache_writer,
         }
     }
 }
@@ -82,6 +91,11 @@ impl WorkerState {
 impl Drop for WorkerState {
     fn drop(&mut self) {
         flush_out_buf(&mut self.out_buf, self.stdout_block_buffered);
+        if let Some(writer) = &self.cache_writer
+            && !self.cache_buf.is_empty()
+        {
+            writer.write(&self.cache_buf);
+        }
         self.totals
             .scanned
             .fetch_add(self.local_scanned, Ordering::Relaxed);
@@ -152,6 +166,13 @@ pub fn process_entry(path: &Path, is_dir: bool, is_root: bool, state: &mut Worke
 
     if state.target.is_match(filename) {
         state.local_found += 1;
+        if let Some(writer) = &state.cache_writer {
+            append_path(&mut state.cache_buf, path, true);
+            if state.cache_buf.len() >= STREAM_BATCH_THRESHOLD {
+                writer.write(&state.cache_buf);
+                state.cache_buf.clear();
+            }
+        }
         if state.verbose {
             let s = format!("[MATCH] {}\n", path.display());
             state.out_buf.extend_from_slice(s.as_bytes());
