@@ -6,8 +6,10 @@ mod walker;
 mod worker;
 
 use clap::Parser;
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use cli::{Cli, ColorMode};
@@ -84,10 +86,21 @@ pub fn run() {
         stdout_block_buffered: !stdout_is_tty,
     });
 
+    let cache_writer = last_cache_path().and_then(CacheWriter::open);
+
     let start = Instant::now();
     let totals = Totals::new();
 
-    walk_parallel(&root, Arc::clone(&config), Arc::clone(&totals));
+    walk_parallel(
+        &root,
+        Arc::clone(&config),
+        Arc::clone(&totals),
+        cache_writer.clone(),
+    );
+
+    if let Some(writer) = cache_writer {
+        writer.finish();
+    }
 
     let elapsed = start.elapsed();
     let secs = elapsed.as_secs_f64();
@@ -110,4 +123,62 @@ pub fn run() {
     }
 
     std::process::exit(if found > 0 { 0 } else { 1 });
+}
+
+/// Mirrors delfaf's cache path resolution so `faf ...` followed by a bare
+/// `delfaf` finds the same file.
+fn last_cache_path() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("FAFIND_LAST") {
+        return Some(PathBuf::from(p));
+    }
+    if let Some(xdg) = std::env::var_os("XDG_CACHE_HOME") {
+        return Some(PathBuf::from(xdg).join("fafind").join("last"));
+    }
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache/fafind/last"))
+}
+
+/// Streams matches to a temp file next to the cache path, then atomically
+/// renames it into place once the walk finishes. Workers write in bounded
+/// batches instead of holding every match in memory for the whole walk.
+/// A failed cache write never affects faf's own exit code.
+pub(crate) struct CacheWriter {
+    tmp_path: PathBuf,
+    final_path: PathBuf,
+    file: Mutex<File>,
+}
+
+impl CacheWriter {
+    fn open(final_path: PathBuf) -> Option<Arc<Self>> {
+        if let Some(parent) = final_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let mut tmp_name = final_path.file_name()?.to_os_string();
+        tmp_name.push(format!(".tmp.{}", std::process::id()));
+        let tmp_path = final_path.with_file_name(tmp_name);
+        let file = File::create(&tmp_path).ok()?;
+        Some(Arc::new(Self {
+            tmp_path,
+            final_path,
+            file: Mutex::new(file),
+        }))
+    }
+
+    pub(crate) fn write(&self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        let _ = self.file.lock().unwrap().write_all(bytes);
+    }
+
+    fn finish(self: Arc<Self>) {
+        let Ok(this) = Arc::try_unwrap(self) else {
+            return;
+        };
+        drop(this.file);
+        if std::fs::rename(&this.tmp_path, &this.final_path).is_err() {
+            // Stray leftover directory at the cache path; clear it and retry once.
+            let _ = std::fs::remove_dir_all(&this.final_path);
+            let _ = std::fs::rename(&this.tmp_path, &this.final_path);
+        }
+    }
 }

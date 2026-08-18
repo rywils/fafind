@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use ignore::WalkBuilder;
 
+use crate::CacheWriter;
 use crate::config::{ExcludeList, WalkConfig};
 use crate::worker::{Totals, WorkerState, process_entry};
 
@@ -24,7 +25,12 @@ pub fn should_skip_dir(path: &Path, exclude: &ExcludeList) -> bool {
 /// Single unified parallel walker using ignore::WalkBuilder.
 /// ignore::WalkBuilder::build_parallel() uses a work-stealing thread pool.
 /// Workers stream matches to stdout as they are found.
-pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Arc<Totals>) {
+pub fn walk_parallel(
+    root: &Path,
+    config: Arc<WalkConfig>,
+    totals: Arc<Totals>,
+    cache_writer: Option<Arc<CacheWriter>>,
+) {
     let mut builder = WalkBuilder::new(root);
     builder
         .follow_links(false)
@@ -42,7 +48,11 @@ pub fn walk_parallel(root: &Path, config: Arc<WalkConfig>, totals: Arc<Totals>) 
     let walker = builder.build_parallel();
 
     walker.run(|| {
-        let mut state = WorkerState::new(Arc::clone(&config), Arc::clone(&totals));
+        let mut state = WorkerState::new(
+            Arc::clone(&config),
+            Arc::clone(&totals),
+            cache_writer.clone(),
+        );
 
         Box::new(move |entry| {
             use ignore::WalkState;
