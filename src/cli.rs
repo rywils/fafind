@@ -9,6 +9,8 @@ const AFTER_HELP: &str = r#"Matching modes (default: stem — strips extension, 
 
 Other examples:
   faf -i README .          case-insensitive stem match
+  faf -d src /home         directories only (same as --type d)
+  faf -sd cache /var       substr match, directories only
   faf --max-depth 3 main .
   faf --exclude target,node_modules main .
   faf --gitignore src .
@@ -38,6 +40,14 @@ pub struct Cli {
     /// Filter by entry type: f = files only, d = directories only
     #[arg(long = "type")]
     pub entry_type: Option<String>,
+
+    /// Match files only (alias for --type f)
+    #[arg(short = 'f')]
+    pub file: bool,
+
+    /// Match directories only (alias for --type d)
+    #[arg(short = 'd')]
+    pub dir: bool,
 
     /// Separate output with NUL instead of newline (for xargs -0)
     #[arg(short = '0', long = "null")]
