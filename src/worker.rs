@@ -185,7 +185,7 @@ pub fn process_entry(path: &Path, is_dir: bool, is_root: bool, state: &mut Worke
     }
 }
 
-/// Verbose scan log 
+/// Verbose scan log
 #[cold]
 #[inline(never)]
 pub fn verbose_scan(path: &Path) {

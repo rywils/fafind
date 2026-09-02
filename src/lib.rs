@@ -46,14 +46,39 @@ pub fn run() {
         MatchMode::Standard
     };
 
-    let entry_type = match cli.entry_type.as_deref() {
-        Some("f") => EntryType::File,
-        Some("d") => EntryType::Dir,
-        None | Some("a") => EntryType::Any,
+    // -f / -d are shorthands for --type f / --type d.
+    if cli.file && cli.dir {
+        eprintln!("{prog}: cannot use -f and -d together");
+        std::process::exit(2);
+    }
+    let short_type = if cli.file {
+        Some(EntryType::File)
+    } else if cli.dir {
+        Some(EntryType::Dir)
+    } else {
+        None
+    };
+    let flag_type = match cli.entry_type.as_deref() {
+        None => None,
+        Some("f") => Some(EntryType::File),
+        Some("d") => Some(EntryType::Dir),
+        Some("a") => Some(EntryType::Any),
         Some(other) => {
-            eprintln!("{prog}: unknown --type '{}' (use f or d)", other);
+            eprintln!("{prog}: unknown --type '{}' (use f, d, or a)", other);
             std::process::exit(2);
         }
+    };
+    let entry_type = match (short_type, flag_type) {
+        (Some(s), Some(f)) if s != f => {
+            let flag = if cli.file { "-f" } else { "-d" };
+            eprintln!(
+                "{prog}: {flag} conflicts with --type {}",
+                cli.entry_type.as_deref().unwrap()
+            );
+            std::process::exit(2);
+        }
+        (Some(t), _) | (_, Some(t)) => t,
+        (None, None) => EntryType::Any,
     };
 
     let root = cli.root.unwrap_or_else(|| PathBuf::from("/"));
@@ -115,10 +140,7 @@ pub fn run() {
     if !cli.quiet {
         eprintln!(
             "{prog}: scanned {} files in {:.2}s ({:.0} files/sec), found {} matches",
-            scanned,
-            secs,
-            files_per_sec,
-            found
+            scanned, secs, files_per_sec, found
         );
     }
 
