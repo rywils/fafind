@@ -5,8 +5,8 @@
 Update the version in `Cargo.toml` and `Cargo.lock` (`cargo build --release`), commit, then:
 
 ```sh
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 Tagging is the only step required to build and publish binaries.
@@ -21,11 +21,11 @@ On every `v*` tag push, `.github/workflows/release.yml`:
    - `x86_64-unknown-linux-gnu` (native, Ubuntu runner)
    - `aarch64-unknown-linux-gnu` (via `cross`, Ubuntu runner)
    - `aarch64-apple-darwin` (native, macOS 14 runner)
-2. Packages each Linux/macOS binary as `fafind-<platform>-<tag>.tar.gz` (e.g. `fafind-linux-x86_64-v1.1.0.tar.gz`)
+2. Packages each Linux/macOS binary as `fafind-<platform>-<tag>.tar.gz` (e.g. `fafind-linux-x86_64-v1.2.0.tar.gz`)
 3. Creates a GitHub Release for the tag and uploads all archives
 
 The release is available at:
-`https://github.com/rywils/fafind/releases/tag/v1.1.0`
+`https://github.com/rywils/fafind/releases/tag/v1.2.0`
 
 Each Linux tarball contains one `fafind` binary. The AUR package installs `faf` as a symlink to that binary.
 
@@ -51,7 +51,7 @@ cd fafind-bin
 cp /path/to/fafind/packaging/aur/PKGBUILD .
 cp /path/to/fafind/packaging/aur/.SRCINFO .
 git add PKGBUILD .SRCINFO
-git commit -m "upg: fafind-bin 1.1.0"
+git commit -m "upg: fafind-bin 1.2.0"
 git push
 ```
 
@@ -59,15 +59,15 @@ Linux release URLs used by the PKGBUILD:
 
 | Arch | URL path |
 |------|----------|
-| x86_64 | `.../fafind-linux-x86_64-v1.1.0.tar.gz` |
-| aarch64 | `.../fafind-linux-arm64-v1.1.0.tar.gz` |
+| x86_64 | `.../fafind-linux-x86_64-v1.2.0.tar.gz` |
+| aarch64 | `.../fafind-linux-arm64-v1.2.0.tar.gz` |
 
 ---
 
 ## 4. Update Homebrew formula sha256
 
 ```sh
-curl -sL https://github.com/rywils/fafind/releases/download/v1.1.0/fafind-macos-arm64-v1.1.0.tar.gz | sha256sum
+curl -sL https://github.com/rywils/fafind/releases/download/v1.2.0/fafind-macos-arm64-v1.2.0.tar.gz | sha256sum
 ```
 
 Replace the hash or placeholder values in `fafind.rb` and bump `version`. Submit a PR to tap or run `brew bump-formula-pr` if using homebrew-core.

@@ -12,16 +12,16 @@ Pre-built binaries from [GitHub Releases](https://github.com/rywils/fafind/relea
 From the repo root:
 
 ```sh
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 Wait for [release.yml](../../.github/workflows/release.yml) to finish. Confirm these assets exist:
 
 | Architecture | Asset filename |
 |--------------|----------------|
-| x86_64 Linux | `fafind-linux-x86_64-v1.1.0.tar.gz` |
-| aarch64 Linux | `fafind-linux-arm64-v1.1.0.tar.gz` |
+| x86_64 Linux | `fafind-linux-x86_64-v1.2.0.tar.gz` |
+| aarch64 Linux | `fafind-linux-arm64-v1.2.0.tar.gz` |
 
 Each tarball contains a single `fafind` executable (stripped).
 
@@ -61,7 +61,7 @@ cd fafind-bin
 cp /path/to/fafind/packaging/aur/PKGBUILD .
 cp /path/to/fafind/packaging/aur/.SRCINFO .
 git add PKGBUILD .SRCINFO
-git commit -m "upg: fafind-bin 1.1.0"
+git commit -m "upg: fafind-bin 1.2.0"
 git push
 ```
 

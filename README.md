@@ -172,13 +172,25 @@ faf --gitignore main .
 
 ---
 
-### filter by type
+### filter by type (`-f` / `-d` / `--type`)
 
 ~~~bash
-faf --type f main .   # files only
-faf --type d src .    # directories only
+faf -f main .         # files only
+faf -d src .          # directories only
+faf --type f main .   # long form
+faf --type d src .    # long form
 faf --type a main .   # any (default)
 ~~~
+
+`-f` and `-d` are short aliases for `--type f` and `--type d`.
+They stack with the mode and case flags, so `-sd`, `-pf`, `-id` all work:
+
+~~~bash
+faf -sd cache /var    # substring match, directories only
+faf -id README .      # case-insensitive stem match, directories only
+~~~
+
+`-f` and `-d` cannot be combined, and neither may contradict an explicit `--type`.
 
 ---
 
