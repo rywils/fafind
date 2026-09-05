@@ -2,32 +2,19 @@
 
 ### fast as f*#! filename search.
 
-`fafind` (and the shorter alias **`faf`**) is a zero-allocation, parallel filesystem search tool written in Rust, focused purely on filename matching.
+`fafind` (alias `faf`) is a parallel filesystem search tool written in Rust.
+It matches filenames only and stays out of file contents.
 
-It’s built to rip through millions of files with minimal overhead.
+---
 
---- 
-
-** Download [delfaf](https://github.com/rywils/delfaf) to mass-delete matched items that fafind locates with a single command. ** 
+Pair it with [delfaf](https://github.com/rywils/delfaf) to mass-delete whatever the last `faf` run found.
 
 ---
 
 ## why this exists
 
-Most search tools either:
-
-- scan file contents (slow for this use case),
-- allocate constantly, or
-- bottleneck on output or synchronization
-
-**faf avoids all of that.**
-
-This is a hot-path optimized walker with:
-
-- zero allocations per entry
-- SIMD substring matching
-- ASCII fast paths with Unicode fallback
-- parallel traversal using a work-stealing scheduler
+Most search tools scan file contents, allocate per entry, or stall on output locks.
+faf walks the tree on every core, matches raw filename bytes, and writes results in large batches.
 
 ---
 
@@ -42,14 +29,15 @@ cargo build --release
 sudo cp target/release/faf target/release/fafind /usr/local/bin/
 ~~~
 
-Both `faf` and `fafind` are built from the same codebase. Use whichever name you prefer.
+`faf` and `fafind` are the same program.
+Use whichever name you prefer.
 
 ### packages
 
-- **Arch (AUR):** `fafind-bin` — see [`packaging/aur/README.md`](packaging/aur/README.md)
-- **Homebrew:** see `RELEASE.md`
+- Arch (AUR): `fafind-bin`, see [`packaging/aur/README.md`](packaging/aur/README.md)
+- Homebrew: see `RELEASE.md`
 
-The AUR package installs `fafind` and a `faf` symlink. From source, copy or link both names as you prefer.
+The AUR package installs `fafind` and a `faf` symlink.
 
 ---
 
@@ -57,11 +45,9 @@ The AUR package installs `fafind` and a `faf` symlink. From source, copy or link
 
 ~~~bash
 faf <target> [root]
-# same as:
-fafind <target> [root]
 ~~~
 
-If `root` is not provided, it defaults to `/`.
+`root` defaults to `/`.
 
 ---
 
@@ -69,84 +55,62 @@ If `root` is not provided, it defaults to `/`.
 
 ### default (stem match)
 
-Matches filename **without extension**.
+Matches the filename without its extension.
+An extension on the query is ignored, so `faf main.rs` is the same as `faf main`.
 
 ~~~bash
 faf main .
 ~~~
 
-Matches:
+Matches `main.rs` and `main.go`.
+Does not match `domain.rs`.
 
-- `main.rs`
-- `main.go`
-
-Does NOT match:
-
-- `domain.rs`
-
----
-
-### substring match (`-s`)
+### substring (`-s`)
 
 ~~~bash
 faf -s foo .
 ~~~
 
-Matches:
+Matches `foobar.txt`, `myfoo.rs`, `prefoo`, and `notes.foo`.
+The whole filename is searched, extension included.
 
-- `foobar.txt`
-- `myfoo.rs`
-- `prefoo`
-
----
-
-### exact match (`-p`)
+### exact (`-p`)
 
 ~~~bash
 faf -p Makefile .
 ~~~
 
-Matches:
-
-- `Makefile`
-
-Only exact filename match (including extension).
+Matches `Makefile` only.
 
 ---
 
 ## terminal colors
 
-When stdout is a **terminal** (and not `-0` / `--null`), matches are highlighted:
+When stdout is a terminal and `-0` is not set, matches are highlighted:
 
 | Color | Applies to |
 |-------|------------|
-| **Dim** | Path before the filename (`/path/to/`) |
-| **Green** | The matched part of the name (stem in default/`-p`; each hit in `-s`) |
-| **Bold green** | Stem in `-p` (exact) mode |
-| **Yellow** | Extension (`.rs`, `.js`, `.docx`, …) |
-| **Orange** | Non-matching parts of the name in `-s` only |
+| Dim | Path before the filename |
+| Green | The matched part of the name |
+| Bold green | Stem in `-p` mode |
+| Yellow | Extension in stem and `-p` modes |
+| Orange | Non-matching parts of the name in `-s` mode |
 
-**Stem match** — `faf main .` on `/app/main.rs`: dim `/app/`, green `main`, yellow `.rs`
-
-**Substring** — `faf -s main .` on `has_dot_entry_main_corner.js`:
-
-- Orange: `has_dot_entry_` and `_corner`
-- Green: `main`
-- Yellow: `.js`
-
-Control coloring with `--color auto` (default), `--color always`, or `--color never`. Colors are off when output is piped to a file or tool unless you force `--color always`.
+`--color auto` is the default.
+Use `--color always` or `--color never` to override.
 
 ---
 
 ## flags
 
-### case insensitive (`-i` / `--ignore-case`)
+### case insensitive (`-i`)
 
 ~~~bash
 faf -i readme .
 ~~~
 
----
+ASCII names use a byte-wise fold.
+Non-ASCII names and queries fall back to full Unicode case folding.
 
 ### limit depth
 
@@ -154,15 +118,14 @@ faf -i readme .
 faf --max-depth 3 main .
 ~~~
 
----
-
 ### exclude directories
 
 ~~~bash
 faf --exclude target,node_modules main .
 ~~~
 
----
+Matches directory names anywhere below the root.
+The root itself is never excluded.
 
 ### respect .gitignore
 
@@ -170,131 +133,52 @@ faf --exclude target,node_modules main .
 faf --gitignore main .
 ~~~
 
----
-
 ### filter by type (`-f` / `-d` / `--type`)
 
 ~~~bash
 faf -f main .         # files only
 faf -d src .          # directories only
-faf --type f main .   # long form
-faf --type d src .    # long form
 faf --type a main .   # any (default)
 ~~~
 
-`-f` and `-d` are short aliases for `--type f` and `--type d`.
-They stack with the mode and case flags, so `-sd`, `-pf`, `-id` all work:
+`-f` and `-d` stack with the other short flags, so `-sd`, `-pf`, and `-id` all work.
+They cannot be combined with each other or contradict an explicit `--type`.
 
-~~~bash
-faf -sd cache /var    # substring match, directories only
-faf -id README .      # case-insensitive stem match, directories only
-~~~
-
-`-f` and `-d` cannot be combined, and neither may contradict an explicit `--type`.
-
----
-
-### null-separated output (`-0` / `--null`)
+### null-separated output (`-0`)
 
 ~~~bash
 faf -0 main . | xargs -0 rm
 ~~~
 
-Disables color highlighting.
+Disables color.
+
+### verbose (`-v`)
+
+Prints `[SCAN]`, `[SKIP]`, and `[ERROR]` lines to stderr.
+Matches still go to stdout.
+
+### quiet (`-q`)
+
+Suppresses the summary line on stderr.
 
 ---
 
-### verbose mode
+## performance
 
-~~~bash
-faf -v main .
-~~~
-
-Sends to **stderr**:
-
-- `[SCAN]` for every visited entry
-- `[SKIP]` for excluded directories
-- `[ERROR]` for unreadable entries
-
-Matches are still written to **stdout** as normal.
+- Every core walks the tree through a work-stealing scheduler.
+- Filenames are matched as raw bytes, with no UTF-8 decoding or per-entry allocation in the matcher.
+- Substring search uses a prebuilt SIMD `memmem` finder.
+- Non-ASCII names take a cold Unicode path only when `-i` needs it.
+- Each worker batches output into a private buffer and writes it in 64 KiB chunks, whether stdout is a terminal or a pipe.
+- When the reader closes the pipe, as in `faf -s foo / | head`, the walk stops instead of scanning the rest of the disk.
 
 ---
 
-### quiet mode (`-q` / `--quiet`)
+## output
 
-Suppresses the summary line printed to stderr after the search completes.
-
-~~~bash
-faf -q main .
-~~~
-
----
-
-## example
-
-~~~bash
-faf -i --exclude target,node_modules --max-depth 5 main .
-~~~
-
----
-
-## performance characteristics
-
-### zero allocation hot path
-
-- no heap usage per file
-- stack buffers for ASCII matching
-- fallback only when necessary
-- raw reverse-byte scan for filename extraction on non-root entries,
-  bypassing `Path::file_name()`'s `Components` parsing (the walk root still
-  uses the general path, since it may be `.`, `/`, or user-supplied)
-- filename stem computed once per entry in default (stem) match mode,
-  shared between the length prefilter and the equality check
-
-### parallel by default
-
-- uses all available CPU cores
-- work-stealing via `ignore::WalkBuilder`
-
-### efficient output
-
-- each worker formats matches into a private buffer
-- **TTY:** batched stdout writes (64 KiB) to avoid locking on every match
-- **pipes:** flush after each match line so scripts see results immediately
-- atomic counters for scan/match totals (no mutex on the hot path)
-
-### ASCII fast path
-
-- ~95% of filenames handled without Unicode overhead
-
-### SIMD substring search
-
-- powered by `memchr::memmem`
-- length prefilter skips obvious non-matches before full comparison
-
----
-
-## implementation details
-
-- `clap` for CLI parsing
-- `ignore` for parallel walking
-- `memchr` for fast substring search
-- `smallvec` for stack-allocated exclude lists
-
-### key design decisions
-
-- no channels
-- no shared match queues
-- no UTF-8 conversion on Unix (raw bytes)
-- matcher length prefilter and per-worker config caching
-
----
-
-## output format
-
-- newline-separated by default
-- NUL-separated with `-0`
-- raw OS bytes on Unix (no encoding overhead)
+- newline-separated by default, NUL-separated with `-0`
+- raw OS bytes, no re-encoding
+- the matched paths are also written to `~/.cache/fafind/last` for `delfaf`
 
 ---
 
@@ -303,7 +187,7 @@ faf -i --exclude target,node_modules --max-depth 5 main .
 ~~~text
 0 = matches found
 1 = no matches
-2 = error / invalid usage
+2 = invalid usage
 ~~~
 
 ---
@@ -312,17 +196,12 @@ faf -i --exclude target,node_modules --max-depth 5 main .
 
 - not a content search tool (use `grep` or `rg`)
 - not a fuzzy matcher
-- not a UI tool
-
-This is a fast, deterministic filename matcher.
 
 ---
 
 ## changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
-
----
 
 ## license
 
