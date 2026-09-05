@@ -1,6 +1,3 @@
-use smallvec::SmallVec;
-use std::sync::Arc;
-
 use crate::matcher::MatchTarget;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,23 +14,14 @@ pub enum EntryType {
     Dir,
 }
 
-// Exclude lists are typically 0–8 entries. SmallVec<[_; 8]> keeps them on
-// the stack, avoiding a heap allocation AND replacing the hash-table lookup
-// with a linear scan that is faster for n < ~16 due to cache locality.
-pub type ExcludeList = SmallVec<[Box<[u8]>; 8]>;
-
 pub struct WalkConfig {
     pub target: MatchTarget,
-    pub match_mode: MatchMode,
-    pub ignore_case: bool,
     pub max_depth: Option<usize>,
-    /// Excluded directory names as raw byte slices for zero-copy linear scan.
-    pub exclude: Arc<ExcludeList>,
+    /// Excluded directory names. A linear scan beats hashing at this size.
+    pub exclude: Vec<Box<[u8]>>,
     pub entry_type: EntryType,
     pub null_terminate: bool,
     pub gitignore: bool,
     pub verbose: bool,
     pub color: bool,
-    /// When true, flush stdout after each match (needed when stdout is block-buffered).
-    pub stdout_block_buffered: bool,
 }

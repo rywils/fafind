@@ -1,30 +1,14 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use ignore::WalkBuilder;
+use ignore::{WalkBuilder, WalkState};
 
 use crate::CacheWriter;
-use crate::config::{ExcludeList, WalkConfig};
+use crate::config::WalkConfig;
+use crate::util::entry_file_name_bytes;
 use crate::worker::{Totals, WorkerState, process_entry};
 
-/// Returns true if this directory should be skipped.
-/// Linear scan over SmallVec — faster than HashSet for n ≤ ~16.
-#[inline(always)]
-pub fn should_skip_dir(path: &Path, exclude: &ExcludeList) -> bool {
-    if exclude.is_empty() {
-        return false;
-    }
-    path.file_name()
-        .map(|n| {
-            let b = n.as_encoded_bytes();
-            exclude.iter().any(|e| e.as_ref() == b)
-        })
-        .unwrap_or(false)
-}
-
-/// Single unified parallel walker using ignore::WalkBuilder.
-/// ignore::WalkBuilder::build_parallel() uses a work-stealing thread pool.
-/// Workers stream matches to stdout as they are found.
+/// Work-stealing parallel walk. Workers stream matches to stdout as found.
 pub fn walk_parallel(
     root: &Path,
     config: Arc<WalkConfig>,
@@ -35,53 +19,52 @@ pub fn walk_parallel(
     builder
         .follow_links(false)
         .hidden(false)
-        .parents(false) // don't read .ignore/.gitignore from parent dirs
-        .ignore(false) // don't read .ignore files
+        .parents(false)
+        .ignore(false)
         .git_ignore(config.gitignore)
         .git_global(config.gitignore)
-        .git_exclude(config.gitignore);
+        .git_exclude(config.gitignore)
+        .max_depth(config.max_depth);
 
-    if let Some(depth) = config.max_depth {
-        builder.max_depth(Some(depth));
-    }
-
-    let walker = builder.build_parallel();
-
-    walker.run(|| {
+    builder.build_parallel().run(|| {
         let mut state = WorkerState::new(
             Arc::clone(&config),
             Arc::clone(&totals),
             cache_writer.clone(),
         );
-
         Box::new(move |entry| {
-            use ignore::WalkState;
-            match entry {
-                Ok(e) => {
-                    let path = e.path();
-
-                    // file_type() is free: ignore reads d_type from readdir,
-                    // no extra stat syscall on Linux/macOS.
-                    let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
-
-                    // Skip excluded directories before recursing.
-                    if is_dir && should_skip_dir(path, &state.config.exclude) {
-                        if state.verbose {
-                            eprintln!("[SKIP] {}", path.display());
-                        }
-                        return WalkState::Skip;
+            let e = match entry {
+                Ok(e) => e,
+                Err(err) => {
+                    if state.config.verbose {
+                        eprintln!("[ERROR] {err}");
                     }
+                    return WalkState::Continue;
+                }
+            };
+            let path = e.path();
+            // d_type from readdir, no stat.
+            let is_dir = e.file_type().is_some_and(|t| t.is_dir());
+            let is_root = e.depth() == 0;
 
-                    process_entry(path, is_dir, e.depth() == 0, &mut state);
-                    WalkState::Continue
+            // The root was named explicitly, so --exclude never applies to it.
+            if is_dir && !is_root && excluded(path, &state.config.exclude) {
+                if state.config.verbose {
+                    eprintln!("[SKIP] {}", path.display());
                 }
-                Err(e) => {
-                    if state.verbose {
-                        eprintln!("[ERROR] {}", e);
-                    }
-                    WalkState::Continue
-                }
+                return WalkState::Skip;
+            }
+            if process_entry(path, is_dir, is_root, &mut state) {
+                WalkState::Continue
+            } else {
+                WalkState::Quit
             }
         })
     });
+}
+
+#[inline(always)]
+fn excluded(path: &Path, exclude: &[Box<[u8]>]) -> bool {
+    let name = entry_file_name_bytes(path);
+    exclude.iter().any(|e| &**e == name)
 }
