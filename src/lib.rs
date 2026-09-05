@@ -1,3 +1,6 @@
+#[cfg(not(unix))]
+compile_error!("fafind only supports Unix");
+
 mod cli;
 mod config;
 mod matcher;
@@ -7,13 +10,13 @@ mod worker;
 
 use clap::Parser;
 use std::fs::File;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use cli::{Cli, ColorMode};
-use config::{EntryType, ExcludeList, MatchMode, WalkConfig};
+use config::{EntryType, MatchMode, WalkConfig};
 use matcher::MatchTarget;
 use walker::walk_parallel;
 use worker::Totals;
@@ -83,32 +86,26 @@ pub fn run() {
 
     let root = cli.root.unwrap_or_else(|| PathBuf::from("/"));
 
-    let exclude: ExcludeList = cli
-        .exclude
-        .iter()
-        .map(|s| s.as_bytes().to_vec().into_boxed_slice())
-        .collect();
-
-    let stdout_is_tty = atty::is(atty::Stream::Stdout);
     let color = !cli.null
         && match cli.color {
             ColorMode::Never => false,
             ColorMode::Always => true,
-            ColorMode::Auto => stdout_is_tty,
+            ColorMode::Auto => std::io::stdout().is_terminal(),
         };
 
     let config = Arc::new(WalkConfig {
         target: MatchTarget::new(&cli.target, mode, cli.ignore_case),
-        match_mode: mode,
-        ignore_case: cli.ignore_case,
         max_depth: cli.max_depth,
-        exclude: Arc::new(exclude),
+        exclude: cli
+            .exclude
+            .into_iter()
+            .map(|s| s.into_bytes().into_boxed_slice())
+            .collect(),
         entry_type,
         null_terminate: cli.null,
         gitignore: cli.gitignore,
         verbose: cli.verbose,
         color,
-        stdout_block_buffered: !stdout_is_tty,
     });
 
     let cache_writer = last_cache_path().and_then(CacheWriter::open);
@@ -186,10 +183,9 @@ impl CacheWriter {
     }
 
     pub(crate) fn write(&self, bytes: &[u8]) {
-        if bytes.is_empty() {
-            return;
+        if !bytes.is_empty() {
+            let _ = self.file.lock().unwrap().write_all(bytes);
         }
-        let _ = self.file.lock().unwrap().write_all(bytes);
     }
 
     fn finish(self: Arc<Self>) {

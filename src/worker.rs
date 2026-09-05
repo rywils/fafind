@@ -1,18 +1,15 @@
 use std::io::Write;
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::CacheWriter;
 use crate::config::{EntryType, WalkConfig};
-use crate::matcher::MatchTarget;
-use crate::util::{append_path, append_path_highlight};
+use crate::util::{append_path, append_path_highlight, entry_file_name_bytes};
 
-#[cfg(unix)]
-use crate::util::entry_file_name_bytes;
-
-pub const WORKER_BUF_CAP: usize = 256 * 1024; // 256 KB initial capacity per worker
-const STREAM_BATCH_THRESHOLD: usize = 64 * 1024;
+const OUT_BUF_CAP: usize = 256 * 1024;
+const FLUSH_THRESHOLD: usize = 64 * 1024;
 
 pub struct Totals {
     scanned: AtomicU64,
@@ -35,28 +32,14 @@ impl Totals {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum EntryFilter {
-    Any,
-    FileOnly,
-    DirOnly,
-}
-
-/// Worker state
 pub struct WorkerState {
-    target: MatchTarget,
-    entry_filter: EntryFilter,
-    pub verbose: bool,
-    color: bool,
-    null_terminate: bool,
-    stdout_block_buffered: bool,
     pub config: Arc<WalkConfig>,
-    local_scanned: u64,
-    local_found: u64,
-    out_buf: Vec<u8>,
     totals: Arc<Totals>,
-    cache_buf: Vec<u8>,
     cache_writer: Option<Arc<CacheWriter>>,
+    scanned: u64,
+    found: u64,
+    out_buf: Vec<u8>,
+    cache_buf: Vec<u8>,
 }
 
 impl WorkerState {
@@ -65,129 +48,97 @@ impl WorkerState {
         totals: Arc<Totals>,
         cache_writer: Option<Arc<CacheWriter>>,
     ) -> Self {
-        let entry_filter = match config.entry_type {
-            EntryType::File => EntryFilter::FileOnly,
-            EntryType::Dir => EntryFilter::DirOnly,
-            EntryType::Any => EntryFilter::Any,
-        };
         Self {
-            target: config.target.clone(),
-            entry_filter,
-            verbose: config.verbose,
-            color: config.color,
-            null_terminate: config.null_terminate,
-            stdout_block_buffered: config.stdout_block_buffered,
             config,
-            local_scanned: 0,
-            local_found: 0,
-            out_buf: Vec::with_capacity(WORKER_BUF_CAP),
             totals,
-            cache_buf: Vec::new(),
             cache_writer,
+            scanned: 0,
+            found: 0,
+            out_buf: Vec::with_capacity(OUT_BUF_CAP),
+            cache_buf: Vec::new(),
         }
     }
 }
 
 impl Drop for WorkerState {
     fn drop(&mut self) {
-        flush_out_buf(&mut self.out_buf, self.stdout_block_buffered);
-        if let Some(writer) = &self.cache_writer
-            && !self.cache_buf.is_empty()
-        {
+        flush_stdout(&mut self.out_buf);
+        if let Some(writer) = &self.cache_writer {
             writer.write(&self.cache_buf);
         }
         self.totals
             .scanned
-            .fetch_add(self.local_scanned, Ordering::Relaxed);
-        self.totals
-            .found
-            .fetch_add(self.local_found, Ordering::Relaxed);
+            .fetch_add(self.scanned, Ordering::Relaxed);
+        self.totals.found.fetch_add(self.found, Ordering::Relaxed);
     }
 }
 
-/// Write pending match bytes to stdout.
-#[inline(always)]
-fn flush_out_buf(out_buf: &mut Vec<u8>, stdout_block_buffered: bool) {
-    if out_buf.is_empty() {
-        return;
+/// False once stdout is gone, e.g. the reader closed the pipe.
+#[inline(never)]
+fn flush_stdout(buf: &mut Vec<u8>) -> bool {
+    if buf.is_empty() {
+        return true;
     }
-    let mut stdout = std::io::stdout().lock();
-    let _ = stdout.write_all(out_buf);
-    if stdout_block_buffered {
-        let _ = stdout.flush();
-    }
-    out_buf.clear();
+    let ok = std::io::stdout().lock().write_all(buf).is_ok();
+    buf.clear();
+    ok
 }
 
-#[inline(always)]
-fn maybe_flush_matches(out_buf: &mut Vec<u8>, stdout_block_buffered: bool) {
-    if stdout_block_buffered || out_buf.len() >= STREAM_BATCH_THRESHOLD {
-        flush_out_buf(out_buf, stdout_block_buffered);
-    }
-}
-
-/// Hot path: called for every filesystem entry.
+/// Hot path, called for every entry. Returns false when the walk should stop.
 ///
-/// `is_root` marks the walk's starting entry (depth 0), whose path comes
-/// from the user (may be `.`, `/`, or end in `/`) and needs the general
-/// `Path::file_name()` parsing. Every other entry's name comes straight
-/// from `readdir` and is never `.`, `..`, or slash-terminated, so it can
-/// use the raw byte scan below instead of building a `Components` iterator.
+/// The root path comes from the user and may be `.`, `/` or slash-terminated,
+/// so it takes the general `Path::file_name()` route. Every other entry name
+/// comes from `readdir` and is read with a single reverse byte scan.
 #[inline(always)]
-pub fn process_entry(path: &Path, is_dir: bool, is_root: bool, state: &mut WorkerState) {
-    state.local_scanned += 1;
+pub fn process_entry(path: &Path, is_dir: bool, is_root: bool, state: &mut WorkerState) -> bool {
+    let cfg = &*state.config;
+    state.scanned += 1;
 
-    match state.entry_filter {
-        EntryFilter::FileOnly if is_dir => return,
-        EntryFilter::DirOnly if !is_dir => return,
-        EntryFilter::Any | EntryFilter::FileOnly | EntryFilter::DirOnly => {}
+    match cfg.entry_type {
+        EntryType::File if is_dir => return true,
+        EntryType::Dir if !is_dir => return true,
+        _ => {}
     }
 
-    #[cfg(unix)]
-    let filename: &[u8] = if is_root {
-        let Some(f) = path.file_name() else { return };
-        f.as_encoded_bytes()
-    } else {
-        let f = entry_file_name_bytes(path);
-        if f.is_empty() {
-            return;
+    let name = if is_root {
+        match path.file_name() {
+            Some(f) => f.as_bytes(),
+            None => return true,
         }
-        f
-    };
-    #[cfg(not(unix))]
-    let filename: &[u8] = {
-        let Some(f) = path.file_name() else { return };
-        f.as_encoded_bytes()
+    } else {
+        entry_file_name_bytes(path)
     };
 
-    if state.verbose {
+    if cfg.verbose {
         verbose_scan(path);
     }
-
-    if state.target.is_match(filename) {
-        state.local_found += 1;
-        if let Some(writer) = &state.cache_writer {
-            append_path(&mut state.cache_buf, path, true);
-            if state.cache_buf.len() >= STREAM_BATCH_THRESHOLD {
-                writer.write(&state.cache_buf);
-                state.cache_buf.clear();
-            }
-        }
-        if state.verbose {
-            let s = format!("[MATCH] {}\n", path.display());
-            state.out_buf.extend_from_slice(s.as_bytes());
-        } else if state.color {
-            append_path_highlight(&mut state.out_buf, path, &state.config);
-        } else {
-            append_path(&mut state.out_buf, path, state.null_terminate);
-        }
-        maybe_flush_matches(&mut state.out_buf, state.stdout_block_buffered);
+    if !cfg.target.is_match(name) {
+        return true;
     }
+    state.found += 1;
+
+    if let Some(writer) = &state.cache_writer {
+        append_path(&mut state.cache_buf, path, true);
+        if state.cache_buf.len() >= FLUSH_THRESHOLD {
+            writer.write(&state.cache_buf);
+            state.cache_buf.clear();
+        }
+    }
+
+    if cfg.verbose {
+        state
+            .out_buf
+            .extend_from_slice(format!("[MATCH] {}\n", path.display()).as_bytes());
+    } else if cfg.color {
+        append_path_highlight(&mut state.out_buf, path, name, cfg);
+    } else {
+        append_path(&mut state.out_buf, path, cfg.null_terminate);
+    }
+    state.out_buf.len() < FLUSH_THRESHOLD || flush_stdout(&mut state.out_buf)
 }
 
-/// Verbose scan log
 #[cold]
 #[inline(never)]
-pub fn verbose_scan(path: &Path) {
+fn verbose_scan(path: &Path) {
     eprintln!("[SCAN] {}", path.display());
 }
